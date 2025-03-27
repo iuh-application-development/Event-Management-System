@@ -1,49 +1,34 @@
 # EventoEMS - Event Management System
 
-Introducing our Event Management System, a solution developed as part of our final year group project, designed to streamline campus event planning, registration, and ticket booking. I played a key role as the architect, creating the user interface where I incorporated modern design principles and prioritized user experience. We are developing the system using the MERN stack (MongoDB, Express.js, React.js, Node.js), and we are utilizing the agile Scrum methodology for efficient development.
+Giới thiệu hệ thống quản lý sự kiện của chúng tôi, một giải pháp được phát triển như một phần của dự án nhóm năm cuối, nhằm tối ưu hóa việc lập kế hoạch, đăng ký và đặt vé cho các sự kiện trong khuôn viên trường. Tôi đóng vai trò quan trọng với tư cách là kiến trúc sư, thiết kế giao diện người dùng với các nguyên tắc thiết kế hiện đại và ưu tiên trải nghiệm người dùng. Chúng tôi đang phát triển hệ thống bằng MERN stack (MongoDB, Express.js, React.js, Node.js) và áp dụng phương pháp Agile Scrum để phát triển hiệu quả.
 
-**Skills:** *Figma · Ui/ux · React.js · MongoDB · Node.js · Express.js · Requirements Analysis · User Interface Design*
 
 **Features**
-* Schedule a Event.
-* View upcoming events.
-* View the event calendar.
-* Getting approval for the events.
-* Ticket Booking for the event.
-* QR Code generation for receiving tickets.
+* Lên lịch sự kiện.
+* Xem các sự kiện sắp tới.
+* Xem lịch sự kiện.
+* Phê duyệt sự kiện.
+* Đặt vé tham gia sự kiện.
+* Tạo mã QR để nhận vé.
 
-**Technologies Used**
-* ReactJs
-* NodeJs
-* ExpressJs
-* MongoDB
-* NPM (Node Package Manager)
-* JWT webtoken
-* QR code
-
-**_Getting Started_**
-
-**Prerequisites**
+**Yêu Cầu**
 * Node.js and npm installed
 * MongoDB Database
 
-**Instalaltion**
-1. Clone the repository to your local machine.
-2. Navigate to the project directory. use two terminal <br>
+**Cài đặt**
+1. Clone repository về 
+2. Điều hướng đến thư mục dự án, sử dụng hai terminal: <br>
     **Cd Client** - For Frontend <br>
     **Cd api** - For Backend <br>
-3. Install server dependenciesfor both frontend and backend.
-4. Create a .env file in the root directory with the following content, and replace placeholders with your own values. <br>
+3. Cài đặt các thư viện cần thiết cho cả frontend và backend.
+4. Tạo tệp .env trong thư mục gốc với nội dung sau và thay thế chuỗi kết nối  mongodb atlas:  <br>
      MONGODB_URI=mongodb://localhost/your-database-name
 5. Start the server.<br>
      **ems/api:** nodemon start<br>
-     if the command is not working use **PowerShell -ExecutionPolicy Bypass nodemon** this command.
 7. Start the Client:<br>
       **ems/client:** npm run dev
 
-**The application should now be running. You can access it at http://localhost:5173**<br>
-**The Server is running on http://localhost:4000**
+**Ứng dụng sẽ chạy tại: http://localhost:5173**<br>
+**Máy chủ đang chạy tại: http://localhost:4000**
 
 <h1>Thank You</h1>
-
-![portfolio_1](https://github.com/Bilal025/EventoEMS/assets/95700674/001ddf1c-72b3-40bb-8e3e-975ae00ccee5)
