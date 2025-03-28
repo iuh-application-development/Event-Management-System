@@ -167,7 +167,9 @@ export default function AdminPage() {
                       {event.title}
                     </Link>
                   </td>
-                  <td className="p-3 text-sm text-gray-700 whitespace-nowrap">{event.owner}</td>
+                  <td className="p-3 text-sm text-gray-700 whitespace-nowrap">
+                    {event.owner && event.owner.name ? event.owner.name : event.organizedBy || 'Không có'}
+                  </td>
                   <td className="p-3 text-sm text-gray-700 whitespace-nowrap">
                     {new Date(event.eventDate).toLocaleDateString()}
                   </td>

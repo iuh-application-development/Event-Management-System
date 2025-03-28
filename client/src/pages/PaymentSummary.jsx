@@ -18,7 +18,7 @@ export default function PaymentSummary() {
 //!Adding a default state for ticket-----------------------------
     const defaultTicketState = {
       userid: user ? user._id : '',
-      eventid: '',
+      eventId: '',
       ticketDetails: {
         name: user ? user.name : '',
         email: user ? user.email : '',
@@ -49,7 +49,7 @@ export default function PaymentSummary() {
 
         setTicketDetails(prevTicketDetails => ({
           ...prevTicketDetails,
-          eventid: response.data._id,
+          eventId: response.data._id,
        //!capturing event details from backend for ticket----------------------
           ticketDetails: {
             ...prevTicketDetails.ticketDetails,
@@ -109,6 +109,10 @@ export default function PaymentSummary() {
       ticketDetails: {
         ...ticketDetails.ticketDetails,
         qr: qrCode,
+        // Đảm bảo eventdate là Date object
+        eventdate: new Date(ticketDetails.ticketDetails.eventdate),
+        // Đảm bảo ticketprice là số
+        ticketprice: Number(ticketDetails.ticketDetails.ticketprice),
       }
     };
 //!posting the details to backend ----------------------------

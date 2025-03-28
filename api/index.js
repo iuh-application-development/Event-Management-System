@@ -351,17 +351,21 @@ app.get("/events", authenticateUser, async (req, res) => {
      let events;
      
      // Nếu là admin, lấy tất cả sự kiện
-     // Ngược lại chỉ lấy những sự kiện đã được phê duyệt
      if (req.user.role === 'admin') {
-       events = await Event.find().sort({ eventDate: -1 });
+       // Sử dụng populate để lấy tên người tạo sự kiện
+       events = await Event.find()
+         .populate('owner', 'name')
+         .sort({ eventDate: -1 });
      } else {
-       events = await Event.find({ isApproved: true }).sort({ eventDate: -1 });
+       events = await Event.find({ isApproved: true })
+         .populate('owner', 'name')
+         .sort({ eventDate: -1 });
      }
      
      res.json(events);
    } catch (error) {
-     console.error("Error fetching events:", error);
-     res.status(500).json({ error: "Failed to fetch events from MongoDB" });
+     console.error("Lỗi khi lấy sự kiện:", error);
+     res.status(500).json({ error: "Không thể lấy danh sách sự kiện" });
    }
 });
 
@@ -388,12 +392,14 @@ app.get("/event/:id/ordersummary/paymentsummary", async (req, res) => {
 app.post("/tickets", async (req, res) => {
    try {
       const ticketDetails = req.body;
+      console.log("Received ticket data:", JSON.stringify(ticketDetails)); // Thêm dòng này để debug
       const newTicket = new Ticket(ticketDetails);
       await newTicket.save();
       return res.status(201).json({ ticket: newTicket });
    } catch (error) {
-      console.error("Error creating ticket:", error);
-      return res.status(500).json({ error: "Failed to create ticket" });
+      console.error("Error creating ticket:", error.message);
+      // Trả về chi tiết lỗi để dễ debug
+      return res.status(500).json({ error: "Failed to create ticket", details: error.message });
    }
 });
 
@@ -406,6 +412,74 @@ app.get("/tickets/:id", async (req, res) => {
       res.status(500).json({ error: "Failed to fetch tickets" });
    }
 });
+
+// Thêm endpoint này sau app.get("/tickets/:id")
+
+// Endpoint xác thực vé
+app.get("/verify-ticket/:id", authenticateUser, async (req, res) => {
+   try {
+     const ticketId = req.params.id;
+     const ticket = await Ticket.findById(ticketId)
+       .populate('eventId')
+       .populate('userid', 'name email');
+     
+     if (!ticket) {
+       return res.status(404).json({ 
+         valid: false, 
+         message: "Vé không tồn tại" 
+       });
+     }
+     
+     // Kiểm tra xem vé đã được sử dụng chưa
+     if (ticket.isUsed) {
+       return res.status(400).json({ 
+         valid: false, 
+         message: "Vé đã được sử dụng", 
+         ticket: {
+           _id: ticket._id,
+           eventTitle: ticket.eventTitle,
+           userName: ticket.userName,
+           usedAt: ticket.usedAt
+         }
+       });
+     }
+     
+     // Kiểm tra xem sự kiện đã diễn ra chưa
+     const eventDate = new Date(ticket.eventId.eventDate);
+     const today = new Date();
+     if (eventDate < today) {
+       return res.status(400).json({ 
+         valid: false, 
+         message: "Sự kiện đã kết thúc" 
+       });
+     }
+     
+     // Cập nhật trạng thái vé
+     ticket.isUsed = true;
+     ticket.usedAt = new Date();
+     await ticket.save();
+     
+     return res.json({
+       valid: true,
+       message: "Vé hợp lệ",
+       ticket: {
+         _id: ticket._id,
+         eventTitle: ticket.eventTitle,
+         eventDate: ticket.eventId.eventDate,
+         eventTime: ticket.eventId.eventTime,
+         location: ticket.eventId.location,
+         userName: ticket.userName,
+         usedAt: ticket.usedAt
+       }
+     });
+   } catch (error) {
+     console.error("Lỗi khi xác thực vé:", error);
+     res.status(500).json({ 
+       valid: false, 
+       message: "Lỗi khi xác thực vé" 
+     });
+   }
+ });
 
 app.get("/tickets/user/:userId", (req, res) => {
    const userId = req.params.userId;

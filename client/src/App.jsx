@@ -18,6 +18,7 @@ import PaymentSummary from './pages/PaymentSummary'
 import TicketPage from './pages/TicketPage'
 import CreatEvent from './pages/CreateEvent'
 import AdminPage from './pages/AdminPage';
+import Verification from './pages/Verification';
 
 axios.defaults.baseURL = 'http://localhost:4000/';
 axios.defaults.withCredentials=true;
@@ -34,6 +35,7 @@ function App() {
         <Route path='/createEvent' element = {<CreatEvent/>} />
         <Route path='/event/:id' element= {<EventPage/>} />
         <Route path='/calendar' element={<CalendarView />} />
+        <Route path="/verification" element={<Verification />} />
         <Route path='/wallet' element={<TicketPage />}/>
         <Route path='/event/:id/ordersummary' element = {<OrderSummary />} />
       </Route>
