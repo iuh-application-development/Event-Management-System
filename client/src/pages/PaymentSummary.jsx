@@ -5,17 +5,19 @@ import { Link, Navigate, useParams } from 'react-router-dom';
 import {IoMdArrowBack} from 'react-icons/io'
 import { UserContext } from '../UserContext';
 import Qrcode from 'qrcode' //TODO:
+import QRCode from 'qrcode'; // Thêm dòng này
 
 export default function PaymentSummary() {
-    const {id} = useParams();
-    const [event, setEvent] = useState(null);
-    const {user} = useContext(UserContext);
-    const [details, setDetails] = useState({
-      name: '',
-      email: '',
-      contactNo: '',
-    });
-//!Adding a default state for ticket-----------------------------
+  const {id} = useParams();
+  const [event, setEvent] = useState(null);
+  const {user} = useContext(UserContext);
+  const [details, setDetails] = useState({
+    name: '',
+    email: '',
+    contactNo: '',
+  });
+  const [loading, setLoading] = useState(false); // Thêm state loading ở đây
+  //!Adding a default state for ticket-----------------------------
     const defaultTicketState = {
       userid: user ? user._id : '',
       eventId: '',
@@ -95,48 +97,68 @@ export default function PaymentSummary() {
       }));
     };
 //! creating a ticket ------------------------------
-    const createTicket = async (e) => {
+const createTicket = async (e) => {
   e.preventDefault();
-//!adding a ticket qr code to booking ----------------------
+  setLoading(true);
+  
   try {
-    const qrCode = await generateQRCode(
-      ticketDetails.ticketDetails.eventname,
-      ticketDetails.ticketDetails.name
-    );
-//!updating the ticket details qr with prevoius details ------------------
-    const updatedTicketDetails = {
+    // Bước 1: Tạo vé với thông tin cơ bản nhưng chưa có QR
+    const ticketDataWithoutQR = {
       ...ticketDetails,
       ticketDetails: {
         ...ticketDetails.ticketDetails,
-        qr: qrCode,
-        // Đảm bảo eventdate là Date object
         eventdate: new Date(ticketDetails.ticketDetails.eventdate),
-        // Đảm bảo ticketprice là số
         ticketprice: Number(ticketDetails.ticketDetails.ticketprice),
+        qr: "placeholder" // Tạm thời đặt placeholder
       }
     };
-//!posting the details to backend ----------------------------
-    const response = await axios.post(`/tickets`, updatedTicketDetails);
-    alert("Ticket Created");
-    setRedirect(true)
-    console.log('Success creating ticket', updatedTicketDetails)
+    
+    // Bước 2: Gửi request tạo vé đến server và lấy ID chính thức
+    const response = await axios.post(`/tickets`, ticketDataWithoutQR);
+    const newTicket = response.data.ticket;
+    const officialTicketId = newTicket.ticketId;
+    
+    // Bước 3: Tạo QR code với ticketId chính thức
+    const qrCode = await generateQRCode(
+      ticketDetails.ticketDetails.eventname,
+      ticketDetails.ticketDetails.name, 
+      ticketDetails.eventId,
+      officialTicketId // Thêm ticketId chính thức vào QR
+    );
+    
+    // Bước 4: Cập nhật vé với QR code chính xác
+    await axios.put(`/tickets/${newTicket._id}/update-qr`, { qr: qrCode });
+    
+    // Hiển thị thông báo và chuyển hướng
+    alert("Đã tạo vé thành công!");
+    setRedirect(true);
   } catch (error) {
     console.error('Error creating ticket:', error);
+    alert("Không thể tạo vé: " + (error.response?.data?.details || error.message));
+  } finally {
+    setLoading(false);
   }
+};
 
-}
 //! Helper function to generate QR code ------------------------------
-async function generateQRCode(name, eventName) {
+async function generateQRCode(eventName, userName, eventId, ticketId) {
   try {
-    const qrCodeData = await Qrcode.toDataURL(
-        `Event Name: ${name} \n Name: ${eventName}`
-    );
-    return qrCodeData;
+    // Thêm ticketId chính thức vào QR code
+    const qrData = JSON.stringify({
+      event: eventName,
+      name: userName,
+      eventId: eventId,
+      ticketId: ticketId // Thêm ticketId chính thức
+    });
+    
+    const qrCode = await QRCode.toDataURL(qrData);
+    return qrCode;
   } catch (error) {
-    console.error("Error generating QR code:", error);
-    return null;
+    console.error('Error generating QR code:', error);
+    throw error;
   }
 }
+
 if (redirect){
   return <Navigate to={'/wallet'} />
 }
@@ -250,14 +272,15 @@ if (redirect){
               />
             </div>
             <div className="float-right">
-            <p className="text-sm font-semibold pb-2 pt-8">Total : LKR. {event.ticketPrice}</p>
+            <p className="text-sm font-semibold pb-2 pt-8">Total : {event.ticketPrice}</p>
             <Link to={'/'}>
-              <button type="button" 
-                onClick = {createTicket}
-                className="primary">
-                
-               
-                Make Payment</button>
+            <button 
+              type="button" 
+              onClick={createTicket}             
+              disabled={loading}
+              className="primary">
+              {loading ? 'Đang xử lý...' : 'Make Payment'}
+            </button>
               </Link>
             </div>
             
@@ -274,7 +297,7 @@ if (redirect){
             <p className="text-xs">{event.eventDate.split("T")[0]},</p>
             <p className="text-xs pb-2"> {event.eventTime}</p>
             <hr className=" my-2 border-t pt-2 border-gray-400" />
-            <p className="float-right font-bold">LKR. {event.ticketPrice}</p>
+            <p className="float-right font-bold">VND. {event.ticketPrice}</p>
             <p className="font-bold">Sub total: {event.ticketPrice}</p>
           </div>
           

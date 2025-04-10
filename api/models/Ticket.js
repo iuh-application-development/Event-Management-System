@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const ticketSchema = new mongoose.Schema({
    userid: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
    eventId: { type: mongoose.Schema.Types.ObjectId, ref: 'Event', required: true },
+   ticketId: { type: String, unique: true, required: true }, // Thêm trường này
    ticketDetails: {
       name: { type: String, required: true },
       email: { type: String, required: true },

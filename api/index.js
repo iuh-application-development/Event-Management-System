@@ -19,6 +19,7 @@ if (!fs.existsSync(uploadsPath)) {
 }
 
 const Ticket = require("./models/Ticket");
+const { generateTicketId } = require('./utils/ticketUtils'); 
 
 const app = express();
 
@@ -392,13 +393,23 @@ app.get("/event/:id/ordersummary/paymentsummary", async (req, res) => {
 app.post("/tickets", async (req, res) => {
    try {
       const ticketDetails = req.body;
-      console.log("Received ticket data:", JSON.stringify(ticketDetails)); // Thêm dòng này để debug
-      const newTicket = new Ticket(ticketDetails);
+      
+      // Tạo Ticket ID duy nhất
+      const ticketId = generateTicketId(
+         ticketDetails.eventId, 
+         ticketDetails.userid
+      );
+      
+      // Thêm ticketId vào dữ liệu vé
+      const newTicket = new Ticket({
+         ...ticketDetails,
+         ticketId
+      });
+      
       await newTicket.save();
       return res.status(201).json({ ticket: newTicket });
    } catch (error) {
       console.error("Error creating ticket:", error.message);
-      // Trả về chi tiết lỗi để dễ debug
       return res.status(500).json({ error: "Failed to create ticket", details: error.message });
    }
 });
@@ -416,12 +427,66 @@ app.get("/tickets/:id", async (req, res) => {
 // Thêm endpoint này sau app.get("/tickets/:id")
 
 // Endpoint xác thực vé
+// Endpoint xác thực vé
 app.get("/verify-ticket/:id", authenticateUser, async (req, res) => {
    try {
-     const ticketId = req.params.id;
-     const ticket = await Ticket.findById(ticketId)
-       .populate('eventId')
-       .populate('userid', 'name email');
+     const searchId = req.params.id;
+     let ticket;
+     
+     // Kiểm tra nếu dữ liệu là JSON từ QR code
+     try {
+       const qrData = JSON.parse(searchId);
+       
+       // Ưu tiên tìm theo ticketId nếu có trong QR code
+       if (qrData && qrData.ticketId) {
+         ticket = await Ticket.findOne({ ticketId: qrData.ticketId })
+           .populate('eventId')
+           .populate('userid', 'name email');
+         
+         if (ticket) {
+           console.log("Đã tìm thấy vé bằng ticketId từ QR:", qrData.ticketId);
+         }
+       }
+       
+       // Nếu không tìm thấy bằng ticketId, thử tìm theo eventId và name
+       if (!ticket && qrData && qrData.eventId && qrData.name) {
+         ticket = await Ticket.findOne({ 
+           eventId: qrData.eventId,
+           'ticketDetails.name': new RegExp(qrData.name, 'i')
+         })
+         .populate('eventId')
+         .populate('userid', 'name email');
+         
+         if (ticket) {
+           console.log("Đã tìm thấy vé bằng eventId và name từ QR");
+         }
+       }
+     } catch (e) {
+       // Không phải JSON, bỏ qua
+       console.log("Dữ liệu không phải JSON:", e.message);
+     }
+     
+     // Nếu vẫn không tìm thấy, tiếp tục tìm bằng các phương thức khác
+     if (!ticket && mongoose.Types.ObjectId.isValid(searchId)) {
+       ticket = await Ticket.findById(searchId)
+         .populate('eventId')
+         .populate('userid', 'name email');
+       
+       if (ticket) {
+         console.log("Đã tìm thấy vé bằng ID MongoDB");
+       }
+     }
+     
+     // Tìm bằng ticketId như là chuỗi thông thường
+     if (!ticket) {
+       ticket = await Ticket.findOne({ ticketId: searchId })
+         .populate('eventId')
+         .populate('userid', 'name email');
+       
+       if (ticket) {
+         console.log("Đã tìm thấy vé bằng ticketId trực tiếp");
+       }
+     }
      
      if (!ticket) {
        return res.status(404).json({ 
@@ -437,15 +502,16 @@ app.get("/verify-ticket/:id", authenticateUser, async (req, res) => {
          message: "Vé đã được sử dụng", 
          ticket: {
            _id: ticket._id,
-           eventTitle: ticket.eventTitle,
-           userName: ticket.userName,
+           ticketId: ticket.ticketId,
+           eventTitle: ticket.ticketDetails.eventname,
+           userName: ticket.ticketDetails.name,
            usedAt: ticket.usedAt
          }
        });
      }
      
      // Kiểm tra xem sự kiện đã diễn ra chưa
-     const eventDate = new Date(ticket.eventId.eventDate);
+     const eventDate = new Date(ticket.ticketDetails.eventdate);
      const today = new Date();
      if (eventDate < today) {
        return res.status(400).json({ 
@@ -464,11 +530,12 @@ app.get("/verify-ticket/:id", authenticateUser, async (req, res) => {
        message: "Vé hợp lệ",
        ticket: {
          _id: ticket._id,
-         eventTitle: ticket.eventTitle,
-         eventDate: ticket.eventId.eventDate,
-         eventTime: ticket.eventId.eventTime,
+         ticketId: ticket.ticketId,
+         eventTitle: ticket.ticketDetails.eventname,
+         eventDate: ticket.ticketDetails.eventdate,
+         eventTime: ticket.ticketDetails.eventtime,
          location: ticket.eventId.location,
-         userName: ticket.userName,
+         userName: ticket.ticketDetails.name,
          usedAt: ticket.usedAt
        }
      });
@@ -600,3 +667,25 @@ app.listen(PORT, () => {
    console.log(`Server is running on port ${PORT}`);
    console.log(`Static files served from: ${uploadsPath}`);
 });
+
+app.put("/tickets/:id/update-qr", async (req, res) => {
+   try {
+     const { qr } = req.body;
+     const ticketId = req.params.id;
+     
+     const updatedTicket = await Ticket.findByIdAndUpdate(
+       ticketId,
+       { 'ticketDetails.qr': qr },
+       { new: true }
+     );
+     
+     if (!updatedTicket) {
+       return res.status(404).json({ error: "Không tìm thấy vé" });
+     }
+     
+     res.json(updatedTicket);
+   } catch (error) {
+     console.error("Lỗi khi cập nhật QR code:", error);
+     res.status(500).json({ error: "Không thể cập nhật QR code", details: error.message });
+   }
+ });

@@ -283,7 +283,7 @@ export default function CreatEvent() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700">
-                  Giá vé (đồng) *
+                  Giá vé (VND) *
                 </label>
                 <input
                   type="number"

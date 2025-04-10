@@ -102,14 +102,14 @@ export default function TicketPage() {
                     Name: <span className="font-extrabold text-primarydark">{ticket.ticketDetails.name.toUpperCase()}</span>
                   </div>
                   <div>
-                    Price: <span className="font-extrabold text-primarydark"> Rs. {ticket.ticketDetails.ticketprice}</span>
+                    Price: <span className="font-extrabold text-primarydark">{ticket.ticketDetails.ticketprice.toLocaleString()} VND</span>
                   </div>
                   <div>
                     Email: <span className="font-extrabold text-primarydark">{ticket.ticketDetails.email}</span>
                   </div>
                   <div>
-                    Ticket ID:<br /><span className="font-extrabold text-primarydark">{ticket.ticketDetails._id}</span>
-                  </div>
+                    Ticket ID: <span className="font-extrabold text-primarydark">{ticket.ticketId || "Chưa cấp"}</span>
+                  </div>                   
                 </div>
               </div>
               

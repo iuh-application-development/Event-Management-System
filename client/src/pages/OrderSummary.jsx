@@ -106,13 +106,13 @@ export default function OrderSummary() {
                         </h2>
                         <div className='text-sm flex justify-between' >
                               <div className='text-left mt-5'>{event.title}</div>
-                              <div className='text-right mt-5 mb-6 pr-5'>LKR. {event.ticketPrice}</div>
+                              <div className='text-right mt-5 mb-6 pr-5'>VND {event.ticketPrice}</div>
                         </div>
                         
                         <hr className=" my-2 pt-2 border-gray-300" />
                         <div className='text-sm font-bold flex justify-between' >
                           <div className='text-left mt-5'>SUB TOTAL</div>
-                          <div className='text-right mt-5 mb-6 pr-5'>LKR. {event.ticketPrice}</div>
+                          <div className='text-right mt-5 mb-6 pr-5'>VND {event.ticketPrice}</div>
                         </div>
                         <div className='flex justify-between'>
                           <input className='h-5 ' type='checkbox' onChange={handleCheckboxChange}/>

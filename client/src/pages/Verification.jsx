@@ -22,9 +22,15 @@ export default function Verification() {
 
   const handleQrScan = (data) => {
     if (data) {
-      setTicketId(data.text);
-      verifyTicket(data.text);
-      setUsingCamera(false);
+      try {
+        // Gửi toàn bộ dữ liệu QR code để server xử lý
+        setTicketId(data.text);
+        verifyTicket(data.text);
+        setUsingCamera(false);
+      } catch (error) {
+        console.error("Lỗi khi xử lý QR code:", error);
+        setQrError("Định dạng QR code không hợp lệ");
+      }
     }
   };
 
@@ -129,7 +135,7 @@ export default function Verification() {
               <h3 className="text-lg font-semibold mb-2">Thông tin vé:</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <p><span className="font-medium">Mã vé:</span> {verificationResult.ticket._id}</p>
+                  <p><span className="font-medium">Ticket ID:</span> {verificationResult.ticket.ticketId}</p>
                   <p><span className="font-medium">Sự kiện:</span> {verificationResult.ticket.eventTitle}</p>
                   <p><span className="font-medium">Người sở hữu:</span> {verificationResult.ticket.userName}</p>
                 </div>
