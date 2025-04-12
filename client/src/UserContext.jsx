@@ -1,12 +1,12 @@
 /* eslint-disable react/prop-types */
 import {createContext, useEffect, useState} from "react";
 import axios from 'axios';
+import { useFirebaseAuth } from "./FirebaseAuthContext"; // Sửa từ "../FirebaseAuthContext" thành "./FirebaseAuthContext"
 
 export const UserContext = createContext({});
 
 export function UserContextProvider({children}){
-  const [user, setUser] = useState(null);
-  const [ready, setReady] = useState(false); // Thêm state ready
+  const { user, ready } = useFirebaseAuth();
 
   useEffect(() => {
     if (!user) {

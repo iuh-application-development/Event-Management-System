@@ -1,13 +1,12 @@
-import { useContext, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import axios from 'axios'
 import {Link} from "react-router-dom";
-import { UserContext } from "../UserContext";
 import { RxExit } from 'react-icons/rx';
 import { BsFillCaretDownFill } from 'react-icons/bs';
-
+import { useFirebaseAuth } from "../FirebaseAuthContext";
 
 export default function Header() {
-  const {user,setUser} = useContext(UserContext);
+  const {user, logout: firebaseLogout} = useFirebaseAuth();
   const [isMenuOpen, setisMenuOpen] = useState(false);
   const [events, setEvents] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -15,13 +14,18 @@ export default function Header() {
 
   //! Fetch events from the server -------------------------------------------------
   useEffect(() => {
+    // Thêm token Firebase vào header mỗi lần gửi request
+    const token = localStorage.getItem('firebaseToken');
+    if (token) {
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    }
     
     axios.get("/events").then((response) => {
       setEvents(response.data);
     }).catch((error) => {
       console.error("Error fetching events:", error);
     });
-  }, []);
+  }, [user]); // Thêm user vào dependencies để fetch lại khi user thay đổi
 
 
   //! Search bar functionality----------------------------------------------------
@@ -42,11 +46,25 @@ export default function Header() {
   }, []); 
   
   //! Logout Function --------------------------------------------------------
-  async function logout(){
-    await axios.post('/logout');
-    setUser(null);
+  async function handleLogout(){
+    try {
+      // Gọi hàm đăng xuất Firebase
+      await firebaseLogout();
+      
+      // Xóa token từ localStorage
+      localStorage.removeItem('firebaseToken');
+      
+      // Xóa header Authorization
+      delete axios.defaults.headers.common['Authorization'];
+      
+      // Thông báo thành công (tùy chọn)
+      console.log("Đăng xuất thành công");
+    } catch (error) {
+      console.error("Lỗi khi đăng xuất:", error);
+    }
   }
-//! Search input ----------------------------------------------------------------
+
+  //! Search input ----------------------------------------------------------------
   const handleSearchInputChange = (event) => {
     setSearchQuery(event.target.value);
   };
@@ -167,7 +185,7 @@ export default function Header() {
               <BsFillCaretDownFill className="h-5 w-5 cursor-pointer hover:rotate-180 transition-all" onClick={() => setisMenuOpen(!isMenuOpen)}/>
             </div>
             <div className="hidden md:flex">
-              <button onClick={logout} className="secondary">
+              <button onClick={handleLogout} className="secondary">
                 <div>Log out</div>
                 <RxExit/>
               </button>
@@ -218,7 +236,7 @@ export default function Header() {
                   </Link>
                 )}
 
-                <Link className="flex hover:bg-background hover:shadow py-2 pl-6 pb-3 pr-8 rounded-lg" onClick={logout}>
+                <Link className="flex hover:bg-background hover:shadow py-2 pl-6 pb-3 pr-8 rounded-lg" onClick={handleLogout}>
                   Log out
                 </Link>
                 </div>

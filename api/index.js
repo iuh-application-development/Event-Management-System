@@ -9,6 +9,7 @@ const cookieParser = require("cookie-parser");
 const multer = require("multer");
 const path = require("path");
 const fs = require('fs');
+const admin = require('./firebaseAdmin');
 
 // Xác định đường dẫn tuyệt đối cho thư mục uploads
 const uploadsPath = path.join(__dirname, 'uploads');
@@ -43,19 +44,51 @@ mongoose.connect(process.env.MONGO_URL);
 // Tạo tài khoản admin mặc định nếu chưa tồn tại
 const createDefaultAdmin = async () => {
    try {
+     // Kiểm tra trong MongoDB
      const adminExists = await UserModel.findOne({ email: "admin@eventems.com" });
      
-     if (!adminExists) {
+     let firebaseUid;
+     // Kiểm tra trong Firebase Auth
+     try {
+       const userRecord = await admin.auth().getUserByEmail("admin@eventems.com");
+       firebaseUid = userRecord.uid;
+       console.log("Tài khoản admin đã tồn tại trong Firebase Auth");
+     } catch (firebaseError) {
+       // Nếu không tìm thấy trong Firebase, tạo mới
+       if (firebaseError.code === 'auth/user-not-found') {
+         try {
+           const userRecord = await admin.auth().createUser({
+             email: "admin@eventems.com",
+             password: "admin123",
+             displayName: "Administrator"
+           });
+           firebaseUid = userRecord.uid;
+           console.log("Đã tạo tài khoản admin trong Firebase Auth:", userRecord.uid);
+         } catch (createError) {
+           console.error("Lỗi khi tạo tài khoản admin trong Firebase:", createError);
+         }
+       }
+     }
+     
+     // Tạo hoặc cập nhật trong MongoDB
+     if (!adminExists && firebaseUid) {
        await UserModel.create({
+         uid: firebaseUid, // Thêm uid từ Firebase
          name: "Administrator",
          email: "admin@eventems.com",
          password: bcrypt.hashSync("admin123", bcryptSalt),
          role: "admin"
        });
        console.log("Tài khoản admin mặc định đã được tạo!");
-       console.log("Email: admin@eventems.com");
-       console.log("Mật khẩu: admin123");
+     } else if (adminExists && firebaseUid && !adminExists.uid) {
+       // Cập nhật uid nếu tài khoản đã tồn tại nhưng chưa có uid
+       adminExists.uid = firebaseUid;
+       await adminExists.save();
+       console.log("Đã cập nhật uid cho tài khoản admin hiện có");
      }
+     
+     console.log("Email: admin@eventems.com");
+     console.log("Mật khẩu: admin123");
    } catch (error) {
      console.error("Lỗi khi tạo tài khoản admin mặc định:", error);
    }
@@ -140,6 +173,38 @@ const isOrganizerOrAdmin = (req, res, next) => {
       });
    }
 };
+
+// Middleware xác thực Firebase
+const authenticateFirebaseToken = async (req, res, next) => {
+   // Kiểm tra header Authorization
+   const authHeader = req.headers.authorization;
+   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+     return res.status(401).json({ error: 'Chưa đăng nhập' });
+   }
+   
+   // Lấy token từ header
+   const token = authHeader.split('Bearer ')[1];
+   
+   try {
+     // Xác thực token với Firebase Admin SDK
+     const decodedToken = await admin.auth().verifyIdToken(token);
+     
+     // Tìm thông tin người dùng trong MongoDB
+     let userDoc = await UserModel.findOne({ uid: decodedToken.uid });
+     
+     // Nếu không tìm thấy người dùng, có thể họ đang đăng nhập lần đầu
+     if (!userDoc) {
+       return res.status(401).json({ error: 'Người dùng chưa được đăng ký trong hệ thống' });
+     }
+     
+     // Lưu thông tin người dùng vào request
+     req.user = userDoc;
+     next();
+   } catch (error) {
+     console.error('Lỗi xác thực Firebase token:', error);
+     res.status(401).json({ error: 'Token không hợp lệ hoặc đã hết hạn' });
+   }
+ };
 
 // Định nghĩa Event schema và model trước khi sử dụng trong middleware
 const eventSchema = new mongoose.Schema({
@@ -259,18 +324,19 @@ app.post("/login", async (req, res) => {
    );
 });
 
-app.get("/profile", authenticateUser, (req, res) => {
-   // Đã có thông tin user từ middleware authenticateUser
-   const { _id, name, email, role } = req.user;
-   res.json({ _id, name, email, role });
-});
+app.get("/profile", authenticateFirebaseToken, (req, res) => {
+   // Đã có thông tin user từ middleware authenticateFirebaseToken
+   const { _id, name, email, role, photoURL } = req.user;
+   res.json({ _id, name, email, role, photoURL });
+ });
 
-app.post("/logout", (req, res) => {
-   res.cookie("token", "").json(true);
+ app.post("/logout", (req, res) => {
+   // Không cần xóa cookie vì Firebase Auth không sử dụng cookie
+   res.json({ success: true });
 });
 
 // Sửa route createEvent để chỉ lưu tên file, không lưu đường dẫn đầy đủ
-app.post("/createEvent", authenticateUser, isOrganizerOrAdmin, upload.single("image"), async (req, res) => {
+app.post("/createEvent", authenticateFirebaseToken, isOrganizerOrAdmin, upload.single("image"), async (req, res) => {
    try {
       const eventData = req.body;
       
@@ -347,13 +413,12 @@ app.post("/event/:eventId", (req, res) => {
 });
 
 // Đảm bảo chỉ có một route "/events" - xóa route thừa và giữ lại route có middleware
-app.get("/events", authenticateUser, async (req, res) => {
+app.get("/events", authenticateFirebaseToken, async (req, res) => {
    try {
      let events;
      
      // Nếu là admin, lấy tất cả sự kiện
      if (req.user.role === 'admin') {
-       // Sử dụng populate để lấy tên người tạo sự kiện
        events = await Event.find()
          .populate('owner', 'name')
          .sort({ eventDate: -1 });
@@ -394,6 +459,15 @@ app.post("/tickets", async (req, res) => {
    try {
       const ticketDetails = req.body;
       
+      // Kiểm tra dữ liệu bắt buộc
+      if (!ticketDetails.userid || !ticketDetails.eventId || 
+          !ticketDetails.ticketDetails?.name || !ticketDetails.ticketDetails?.email) {
+        return res.status(400).json({ 
+          error: "Dữ liệu không hợp lệ", 
+          details: "Thiếu thông tin bắt buộc để tạo vé" 
+        });
+      }
+      
       // Tạo Ticket ID duy nhất
       const ticketId = generateTicketId(
          ticketDetails.eventId, 
@@ -424,11 +498,8 @@ app.get("/tickets/:id", async (req, res) => {
    }
 });
 
-// Thêm endpoint này sau app.get("/tickets/:id")
-
 // Endpoint xác thực vé
-// Endpoint xác thực vé
-app.get("/verify-ticket/:id", authenticateUser, async (req, res) => {
+app.get("/verify-ticket/:id", authenticateFirebaseToken, async (req, res) => {
    try {
      const searchId = req.params.id;
      let ticket;
@@ -548,18 +619,28 @@ app.get("/verify-ticket/:id", authenticateUser, async (req, res) => {
    }
  });
 
-app.get("/tickets/user/:userId", (req, res) => {
-   const userId = req.params.userId;
-
-   Ticket.find({ userid: userId })
-      .then((tickets) => {
-         res.json(tickets);
-      })
-      .catch((error) => {
-         console.error("Error fetching user tickets:", error);
-         res.status(500).json({ error: "Failed to fetch user tickets" });
-      });
-});
+ app.get("/tickets/user/:userId", authenticateFirebaseToken, async (req, res) => {
+   try {
+     const userId = req.params.userId;
+     console.log("Fetching tickets for user ID:", userId);
+     
+     // Kiểm tra xem userId có phải là ObjectId hợp lệ không
+     if (!mongoose.Types.ObjectId.isValid(userId)) {
+       return res.status(400).json({ error: "Invalid user ID format" });
+     }
+     
+     // Tìm vé dựa trên userid
+     const tickets = await Ticket.find({ userid: userId })
+       .populate('eventId', 'title eventDate eventTime location')  // Thêm thông tin event
+       .sort({ 'ticketDetails.eventdate': 1 });  // Sắp xếp theo ngày event
+ 
+     console.log(`Found ${tickets.length} tickets for user ${userId}`);
+     res.json(tickets);
+   } catch (error) {
+     console.error("Error fetching user tickets:", error);
+     res.status(500).json({ error: "Failed to fetch user tickets", details: error.message });
+   }
+ });
 
 app.delete("/tickets/:id", async (req, res) => {
    try {
@@ -573,7 +654,7 @@ app.delete("/tickets/:id", async (req, res) => {
 });
 
 // Sửa route delete event để cho phép admin xóa bất kỳ sự kiện nào
-app.delete("/event/:id", authenticateUser, async (req, res) => {
+app.delete("/event/:id", authenticateFirebaseToken, async (req, res) => {
    try {
       const eventId = req.params.id;
       const event = await Event.findById(eventId);
@@ -601,7 +682,7 @@ app.delete("/event/:id", authenticateUser, async (req, res) => {
    }
 });
 
-app.put("/event/:id/approve", authenticateUser, isAdmin, async (req, res) => {
+app.put("/event/:id/approve", authenticateFirebaseToken, isAdmin, async (req, res) => {
    try {
       const eventId = req.params.id;
       const event = await Event.findByIdAndUpdate(
@@ -621,7 +702,7 @@ app.put("/event/:id/approve", authenticateUser, isAdmin, async (req, res) => {
    }
 });
 
-app.get("/users", authenticateUser, isAdmin, async (req, res) => {
+app.get("/users", authenticateFirebaseToken, async (req, res) => {
    try {
       const users = await UserModel.find({}, 'name email role');
       res.json(users);
@@ -631,7 +712,7 @@ app.get("/users", authenticateUser, isAdmin, async (req, res) => {
    }
 });
 
-app.put("/users/:id/role", authenticateUser, isAdmin, async (req, res) => {
+app.put("/users/:id/role", authenticateFirebaseToken, isAdmin, async (req, res) => {
    try {
       const { role } = req.body;
       const userId = req.params.id;
@@ -662,6 +743,37 @@ app.put("/users/:id/role", authenticateUser, isAdmin, async (req, res) => {
    }
 });
 
+app.delete("/users/:id", authenticateFirebaseToken, isAdmin, async (req, res) => {
+   try {
+     const userId = req.params.id;
+     
+     // Kiểm tra không cho phép xóa tài khoản admin mặc định
+     const userToDelete = await UserModel.findById(userId);
+     if (!userToDelete) {
+       return res.status(404).json({ error: "Không tìm thấy người dùng" });
+     }
+     
+     // Không cho phép xóa tài khoản admin@eventems.com
+     if (userToDelete.email === "admin@eventems.com") {
+       return res.status(403).json({ error: "Không thể xóa tài khoản admin mặc định" });
+     }
+     
+     // Xóa người dùng
+     await UserModel.findByIdAndDelete(userId);
+     
+     // Xóa các sự kiện do người dùng tạo
+     await Event.deleteMany({ owner: userId });
+     
+     // Xóa các vé của người dùng
+     await Ticket.deleteMany({ userid: userId });
+     
+     res.json({ message: "Người dùng đã được xóa thành công" });
+   } catch (error) {
+     console.error("Lỗi khi xóa người dùng:", error);
+     res.status(500).json({ error: "Không thể xóa người dùng" });
+   }
+ });
+ 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
    console.log(`Server is running on port ${PORT}`);
@@ -687,5 +799,36 @@ app.put("/tickets/:id/update-qr", async (req, res) => {
    } catch (error) {
      console.error("Lỗi khi cập nhật QR code:", error);
      res.status(500).json({ error: "Không thể cập nhật QR code", details: error.message });
+   }
+ });
+
+ app.post("/register-firebase-user", async (req, res) => {
+   try {
+     const { uid, name, email, photoURL, role } = req.body;
+     
+     // Kiểm tra xem người dùng đã tồn tại chưa
+     const existingUser = await UserModel.findOne({ uid });
+     if (existingUser) {
+       return res.status(409).json({ error: "Người dùng đã tồn tại" });
+     }
+     
+     // Tạo người dùng mới
+     const newUser = await UserModel.create({
+       uid,
+       name,
+       email,
+       photoURL,
+       role: role || 'participant'
+     });
+     
+     res.status(201).json({
+       _id: newUser._id,
+       name: newUser.name,
+       email: newUser.email,
+       role: newUser.role
+     });
+   } catch (error) {
+     console.error("Lỗi khi đăng ký người dùng Firebase:", error);
+     res.status(500).json({ error: "Không thể đăng ký người dùng" });
    }
  });

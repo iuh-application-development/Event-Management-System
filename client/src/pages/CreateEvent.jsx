@@ -1,13 +1,14 @@
-import { useState, useContext, useEffect } from "react";
-import { UserContext } from "../UserContext";
+import { useState, useEffect } from "react";
+import { useFirebaseAuth } from "../FirebaseAuthContext"; // Thay đổi import này
 import { Navigate, useNavigate } from "react-router-dom";
 import axios from "axios";
 
 export default function CreatEvent() {
-  const { user, ready } = useContext(UserContext);
+  // Sử dụng useFirebaseAuth thay vì useContext(UserContext)
+  const { user, ready } = useFirebaseAuth(); 
   const navigate = useNavigate();
   
-  // States cho form - chỉ giữ lại các trường cần thiết
+  // States cho form - giữ lại các trường cần thiết
   const [title, setTitle] = useState("");
   const [organizedBy, setOrganizedBy] = useState("");
   const [eventDate, setEventDate] = useState("");
@@ -28,6 +29,12 @@ export default function CreatEvent() {
 
   // Kiểm tra quyền truy cập khi component được tải
   useEffect(() => {
+    // Đảm bảo token Firebase được thêm vào header
+    const token = localStorage.getItem('firebaseToken');
+    if (token) {
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    }
+    
     if (ready && !user) {
       navigate("/login");
     }
@@ -55,6 +62,12 @@ export default function CreatEvent() {
     setIsSubmitting(true);
 
     try {
+      // Đảm bảo token Firebase được thêm vào header
+      const token = localStorage.getItem('firebaseToken');
+      if (token) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      }
+
       // Validate các trường bắt buộc
       if (!title || !organizedBy || !eventDate || !eventTime || !location || !eventType || !description || !ticketPrice || !quantity) {
         throw new Error("Vui lòng điền đầy đủ thông tin bắt buộc");
@@ -83,7 +96,8 @@ export default function CreatEvent() {
       // Gửi request tạo sự kiện
       const { data } = await axios.post('/createEvent', formData, {
         headers: {
-          'Content-Type': 'multipart/form-data'
+          'Content-Type': 'multipart/form-data',
+          'Authorization': `Bearer ${token}` // Đảm bảo gửi token
         }
       });
       
@@ -117,10 +131,6 @@ export default function CreatEvent() {
 
   // Kiểm tra quyền truy cập
   if (!ready) {
-    return <div className="mx-5 xl:mx-32 md:mx-10 mt-5">Đang tải...</div>;
-  }
-
-  if (ready === false) {
     return <div className="mx-5 xl:mx-32 md:mx-10 mt-5">Đang tải...</div>;
   }
 

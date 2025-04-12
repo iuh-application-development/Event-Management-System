@@ -1,21 +1,27 @@
-import { useState, useEffect, useContext } from "react";
-import { UserContext } from "../UserContext";
+import { useState, useEffect } from "react";
+import { useFirebaseAuth } from "../FirebaseAuthContext";
 import axios from "axios";
 import { Navigate, Link } from "react-router-dom";
 
 export default function AdminPage() {
-    const { user, ready } = useContext(UserContext);
+    const { user, ready } = useFirebaseAuth();
     const [users, setUsers] = useState([]);
     const [events, setEvents] = useState([]);
     const [activeTab, setActiveTab] = useState('users');
     const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (user && user.role === 'admin') {
+    if (ready && user && user.role === 'admin') {
+      // Đảm bảo token Firebase được thêm vào header
+      const token = localStorage.getItem('firebaseToken');
+      if (token) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      }
+      
       fetchUsers();
       fetchEvents();
     }
-  }, [user]);
+  }, [user, ready]);
 
   // Hàm lấy danh sách người dùng từ API
   const fetchUsers = async () => {
@@ -25,6 +31,7 @@ export default function AdminPage() {
       setLoading(false);
     } catch (error) {
       console.error("Lỗi khi lấy danh sách người dùng:", error);
+      alert("Không thể tải danh sách người dùng: " + error.message);
       setLoading(false);
     }
   };
@@ -36,6 +43,7 @@ export default function AdminPage() {
       setEvents(response.data);
     } catch (error) {
       console.error("Lỗi khi lấy danh sách sự kiện:", error);
+      alert("Không thể tải danh sách sự kiện: " + error.message);
     }
   };
 
@@ -48,6 +56,25 @@ export default function AdminPage() {
     } catch (error) {
       console.error("Lỗi khi thay đổi vai trò người dùng:", error);
       alert("Không thể thay đổi vai trò người dùng!");
+    }
+  };
+  
+  const deleteUser = async (userId, userEmail) => {
+    // Không cho phép xóa tài khoản admin mặc định
+    if (userEmail === 'admin@eventems.com') {
+      alert("Không thể xóa tài khoản admin mặc định!");
+      return;
+    }
+    
+    if (window.confirm("Bạn có chắc chắn muốn xóa người dùng này? Tất cả sự kiện và vé liên quan cũng sẽ bị xóa.")) {
+      try {
+        await axios.delete(`/users/${userId}`);
+        fetchUsers();
+        alert("Người dùng đã được xóa thành công!");
+      } catch (error) {
+        console.error("Lỗi khi xóa người dùng:", error);
+        alert("Không thể xóa người dùng: " + (error.response?.data?.error || error.message));
+      }
     }
   };
 
@@ -127,6 +154,7 @@ export default function AdminPage() {
                   <td className="p-3 text-sm text-gray-700 whitespace-nowrap">{user.email}</td>
                   <td className="p-3 text-sm text-gray-700 whitespace-nowrap">{user.role}</td>
                   <td className="p-3 text-sm whitespace-nowrap">
+                  <div className="flex items-center space-x-2">
                     <select 
                       defaultValue={user.role}
                       onChange={(e) => changeUserRole(user._id, e.target.value)}
@@ -136,7 +164,18 @@ export default function AdminPage() {
                       <option value="organizer">Organizer</option>
                       <option value="participant">Participant</option>
                     </select>
-                  </td>
+                    
+                    <button
+                      onClick={() => deleteUser(user._id, user.email)}
+                      disabled={user.email === 'admin@eventems.com'}
+                      className={`py-1 px-2 rounded-md text-xs text-white ${
+                        user.email === 'admin@eventems.com' ? 'bg-gray-400 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600'
+                      }`}
+                    >
+                      Xóa
+                    </button>
+                  </div>
+                </td>
                 </tr>
               ))}
             </tbody>

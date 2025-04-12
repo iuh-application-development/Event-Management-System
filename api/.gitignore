@@ -1,1 +1,9 @@
-node_module
+node_modules
+.env
+serviceAccountKey.json
+*.log
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
