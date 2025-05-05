@@ -43,8 +43,20 @@ export default function LoginPage() {
       await loginWithGoogle();
       setRedirect(true);
     } catch (error) {
-      console.error("Lỗi đăng nhập Google:", error);
-      setError("Đăng nhập với Google thất bại. Vui lòng thử lại");
+      console.error("Chi tiết lỗi đăng nhập Google:", error);
+      
+      // Xử lý các lỗi cụ thể
+      if (error.code === 'auth/popup-closed-by-user') {
+        setError("Cửa sổ đăng nhập Google đã bị đóng. Vui lòng thử lại");
+      } else if (error.code === 'auth/popup-blocked') {
+        setError("Trình duyệt đã chặn cửa sổ popup. Vui lòng cho phép popup và thử lại");
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        setError("Yêu cầu đăng nhập bị hủy. Vui lòng thử lại");
+      } else if (error.code === 'auth/network-request-failed') {
+        setError("Lỗi kết nối mạng. Vui lòng kiểm tra kết nối của bạn và thử lại");
+      } else {
+        setError("Đăng nhập với Google thất bại. Vui lòng thử lại");
+      }
     }
   };
 

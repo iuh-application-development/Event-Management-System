@@ -13,17 +13,12 @@ const firebaseConfig = {
     measurementId: "G-FFS6EJJ63P"
   };;
 
-// Khởi tạo Firebase
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
-
-// Khởi tạo Firebase Authentication
-const auth = getAuth(app);
-const googleProvider = new GoogleAuthProvider();
-
-// Cấu hình provider Google
-googleProvider.setCustomParameters({
-  prompt: 'select_account'
-});
-
-export { auth, googleProvider };
+  const app = initializeApp(firebaseConfig);
+  export const auth = getAuth(app);
+  
+  // Cấu hình Google Provider
+  export const googleProvider = new GoogleAuthProvider();
+  googleProvider.addScope('profile');
+  googleProvider.addScope('email');
+  
+  export default app;

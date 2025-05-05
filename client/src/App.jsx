@@ -40,6 +40,7 @@ function App() {
           <Route path='/calendar' element={<CalendarView />} />
           <Route path="/verification" element={<Verification />} />
           <Route path='/wallet' element={<TicketPage />}/>
+          <Route path="/event/:id/ordersummary" element={<PaymentSummary />} />
           <Route path='/event/:id/ordersummary' element = {<OrderSummary />} />
           <Route path='/event/:id/ordersummary/paymentsummary' element = {<PaymentSummary />} />
         </Route>

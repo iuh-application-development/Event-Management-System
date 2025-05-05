@@ -12,161 +12,221 @@ export default function TicketPage() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (user && user._id) {
-      fetchTickets();
-    } else {
-      setLoading(false);
-    }
+    // Thêm timeout để đảm bảo người dùng có thể thấy nội dung đang tải
+    const timer = setTimeout(() => {
+      if (user && user._id) {
+        fetchTickets();
+      } else {
+        console.log("Chưa có thông tin người dùng:", user);
+        setLoading(false);
+      }
+    }, 500); // Đợi 500ms để đảm bảo user được tải
+    
+    return () => clearTimeout(timer);
   }, [user]);
 
   const fetchTickets = async () => {
+    setLoading(true);
+    setError(null);
+    
     try {
-      setLoading(true);
-      setError(null);
-      
-      // Đảm bảo token Firebase được thêm vào header
+      // Đảm bảo token được thêm vào header
       const token = localStorage.getItem('firebaseToken');
       if (token) {
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       }
       
-      console.log("Fetching tickets for user:", user._id);
+      console.log(`Đang tải vé cho người dùng ID: ${user._id}`);
       const response = await axios.get(`/tickets/user/${user._id}`);
-      console.log("Tickets received:", response.data);
-      setUserTickets(response.data);
+      console.log("Dữ liệu vé nhận được:", response.data);
+      
+      if (Array.isArray(response.data)) {
+        setUserTickets(response.data);
+      } else {
+        console.warn("Phản hồi không phải mảng:", response.data);
+        setUserTickets([]);
+      }
     } catch (err) {
-      console.error('Error fetching user tickets:', err);
-      setError("Không thể tải danh sách vé: " + (err.response?.data?.error || err.message));
+      console.error("Lỗi khi tải vé:", err);
+      
+      if (err.response?.status === 401) {
+        setError("Phiên đăng nhập của bạn đã hết hạn. Vui lòng đăng nhập lại.");
+      } else {
+        setError("Không thể tải danh sách vé. " + (err.response?.data?.error || err.message));
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const deleteTicket = async (ticketId) => {
+  const handleDeleteTicket = async (ticketId) => {
+    if (!window.confirm("Bạn có chắc muốn hủy vé này không?")) {
+      return;
+    }
+    
     try {
-      // Đảm bảo token Firebase được thêm vào header
       const token = localStorage.getItem('firebaseToken');
       if (token) {
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       }
       
       await axios.delete(`/tickets/${ticketId}`);
-      fetchTickets();
-      alert('Ticket Deleted');
-    } catch (error) {
-      console.error('Error deleting ticket:', error);
-      alert("Không thể xóa vé: " + error.message);
+      
+      // Cập nhật danh sách vé sau khi xóa
+      setUserTickets(userTickets.filter(ticket => ticket._id !== ticketId));
+      alert("Vé đã được hủy thành công!");
+    } catch (err) {
+      console.error("Lỗi khi hủy vé:", err);
+      alert("Không thể hủy vé: " + (err.response?.data?.error || err.message));
     }
   };
 
+  // Hiển thị trạng thái đang tải
+  if (loading) {
+    return (
+      <div className="min-h-screen flex justify-center items-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        <p className="ml-3">Đang tải vé của bạn...</p>
+      </div>
+    );
+  }
+
+  // Hiển thị lỗi nếu có
+  if (error) {
+    return (
+      <div className="min-h-screen p-6">
+        <div className="max-w-4xl mx-auto">
+          <h1 className="text-3xl font-bold mb-6">Vé của tôi</h1>
+          
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-6" role="alert">
+            <strong className="font-bold">Lỗi! </strong>
+            <span className="block sm:inline">{error}</span>
+          </div>
+          
+          <div className="flex justify-between items-center">
+            <Link to="/" className="flex items-center text-blue-600 hover:text-blue-800">
+              <IoMdArrowBack className="mr-1" /> Quay lại trang chủ
+            </Link>
+            
+            {error.includes("đăng nhập") && (
+              <Link to="/login" className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded">
+                Đăng nhập lại
+              </Link>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Hiển thị khi chưa đăng nhập
+  if (!user) {
+    return (
+      <div className="min-h-screen p-6">
+        <div className="max-w-4xl mx-auto">
+          <h1 className="text-3xl font-bold mb-6">Vé của tôi</h1>
+          
+          <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded relative mb-6" role="alert">
+            <strong className="font-bold">Lưu ý! </strong>
+            <span className="block sm:inline">Vui lòng đăng nhập để xem vé của bạn.</span>
+          </div>
+          
+          <div className="flex justify-between items-center">
+            <Link to="/" className="flex items-center text-blue-600 hover:text-blue-800">
+              <IoMdArrowBack className="mr-1" /> Quay lại trang chủ
+            </Link>
+            
+            <Link to="/login" className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded">
+              Đăng nhập
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Hiển thị khi không có vé
+  if (userTickets.length === 0) {
+    return (
+      <div className="min-h-screen p-6">
+        <div className="max-w-4xl mx-auto">
+          <h1 className="text-3xl font-bold mb-6">Vé của tôi</h1>
+          
+          <div className="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded relative mb-6" role="alert">
+            <strong className="font-bold">Thông báo! </strong>
+            <span className="block sm:inline">Bạn chưa đặt vé cho sự kiện nào.</span>
+          </div>
+          
+          <div className="flex justify-between items-center">
+            <Link to="/" className="flex items-center text-blue-600 hover:text-blue-800">
+              <IoMdArrowBack className="mr-1" /> Khám phá sự kiện
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Hiển thị danh sách vé
   return (
-    <div className="flex flex-col flex-grow">
-      <div className="mb-5 flex justify-between place-items-center">
-        <div>
-          <Link to='/'>
-            <button
-              className='
-              inline-flex 
-              mt-12
-              gap-2
-              p-3 
-              ml-12
-              bg-gray-100
-              justify-center 
-              items-center 
-              text-blue-700
-              font-bold
-              rounded-md'
-            >
-              <IoMdArrowBack
-                className='
-                font-bold
-                w-6
-                h-6
-                gap-2'
-              />
-              Back
-            </button>
+    <div className="min-h-screen p-6">
+      <div className="max-w-4xl mx-auto">
+        <h1 className="text-3xl font-bold mb-6">Vé của tôi</h1>
+        
+        <div className="mb-4">
+          <Link to="/" className="flex items-center text-blue-600 hover:text-blue-800 w-fit">
+            <IoMdArrowBack className="mr-1" /> Quay lại trang chủ
           </Link>
         </div>
-      </div>
-      
-      {/* Debug panel */}
-      <div className="mx-12 mb-4 p-2 bg-gray-50 text-xs rounded border border-gray-200">
-        <p>User ID: {user?._id || 'Không có'}</p>
-        <p>Token: {localStorage.getItem('firebaseToken') ? 'Có' : 'Không có'}</p>
-        <p>Số lượng vé: {userTickets.length}</p>
-        <button 
-          onClick={fetchTickets} 
-          className="mt-1 bg-blue-500 text-white px-2 py-1 rounded text-xs"
-          disabled={loading}
-        >
-          {loading ? 'Đang tải...' : 'Tải lại vé'}
-        </button>
-      </div>
-      
-      {/* Loading state */}
-      {loading && (
-        <div className="mx-12 p-4 bg-blue-50 rounded-md">
-          <p className="text-blue-700">Đang tải vé...</p>
-        </div>
-      )}
-      
-      {/* Error state */}
-      {error && (
-        <div className="mx-12 p-4 bg-red-50 rounded-md border border-red-200">
-          <p className="text-red-700">{error}</p>
-        </div>
-      )}
-      
-      {/* No tickets state */}
-      {!loading && !error && userTickets.length === 0 && (
-        <div className="mx-12 p-4 bg-gray-50 rounded-md">
-          <p>Bạn chưa có vé nào.</p>
-        </div>
-      )}
-      
-      {/* Tickets list */}
-      {!loading && userTickets.length > 0 && (
-        <div className="mx-12 grid grid-cols-1 xl:grid-cols-2 gap-5">
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {userTickets.map(ticket => (
-            <div key={ticket._id} >
-              <div className="">
-                <div className="h-48 mt-2 gap-2 p-5 bg-gray-100 font-bold rounded-md relative">
-                  <button onClick={() => deleteTicket(ticket._id)} className="absolute cursor-pointer right-0 mr-2">
-                    <RiDeleteBinLine className="h-6 w-10 text-red-700" />
-                  </button>
-                  <div className="flex justify-start place-items-center text-sm md:text-base font-normal">
-                    <div className="h-148 w-148">
-                      <img src={ticket.ticketDetails.qr} alt="QRCode" className="aspect-square object-fill" />
-                    </div>
-                    <div className="ml-6 grid grid-cols-2 gap-x-6 gap-y-2">
-                      <div className="">
-                        Event Name : <br /><span className="font-extrabold text-primarydark">{ticket.ticketDetails.eventname.toUpperCase()}</span>
-                      </div>
-                      <div>
-                        Date & Time:<br /> <span className="font-extrabold text-primarydark">{ticket.ticketDetails.eventdate.toUpperCase().split("T")[0]}, {ticket.ticketDetails.eventtime}</span>
-                      </div>
-                      <div>
-                        Name: <span className="font-extrabold text-primarydark">{ticket.ticketDetails.name.toUpperCase()}</span>
-                      </div>
-                      <div>
-                        Price: <span className="font-extrabold text-primarydark">{ticket.ticketDetails.ticketprice.toLocaleString()} VND</span>
-                      </div>
-                      <div>
-                        Email: <span className="font-extrabold text-primarydark">{ticket.ticketDetails.email}</span>
-                      </div>
-                      <div>
-                        Ticket ID: <span className="font-extrabold text-primarydark">{ticket.ticketId || "Chưa cấp"}</span>
-                      </div>
-                    </div>
-                  </div>
+            <div key={ticket._id} className="bg-white rounded-lg shadow-md overflow-hidden border border-gray-200">
+              <div className="p-4 bg-blue-50 border-b border-gray-200">
+                <h2 className="text-xl font-semibold">{ticket.ticketDetails.eventname}</h2>
+                <p className="text-gray-600 text-sm">Mã vé: {ticket.ticketId}</p>
+              </div>
+              
+              <div className="p-4">
+                <div className="grid grid-cols-1 gap-2">
+                  <p><span className="font-medium">Người mua:</span> {ticket.ticketDetails.name}</p>
+                  <p><span className="font-medium">Email:</span> {ticket.ticketDetails.email}</p>
+                  <p><span className="font-medium">Số điện thoại:</span> {ticket.ticketDetails.contactNo}</p>
+                  <p><span className="font-medium">Ngày:</span> {new Date(ticket.ticketDetails.eventdate).toLocaleDateString('vi-VN')}</p>
+                  <p><span className="font-medium">Giờ:</span> {ticket.ticketDetails.eventtime}</p>
+                  <p><span className="font-medium">Giá vé:</span> {ticket.ticketDetails.ticketprice.toLocaleString('vi-VN')} VNĐ</p>
                 </div>
+              </div>
+              
+              {ticket.ticketDetails.qr && (
+                <div className="p-4 flex justify-center border-t border-gray-200">
+                  <img 
+                    src={ticket.ticketDetails.qr} 
+                    alt="QR Code" 
+                    className="w-48 h-48"
+                  />
+                </div>
+              )}
+              
+              <div className="p-4 bg-gray-50 border-t border-gray-200 flex justify-between items-center">
+                <span className={`px-3 py-1 rounded-full text-sm ${ticket.checkedIn ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
+                  {ticket.checkedIn ? 'Đã sử dụng' : 'Chưa sử dụng'}
+                </span>
+                
+                {!ticket.checkedIn && (
+                  <button
+                    onClick={() => handleDeleteTicket(ticket._id)}
+                    className="flex items-center text-red-600 hover:text-red-800"
+                    title="Hủy vé"
+                  >
+                    <RiDeleteBinLine className="mr-1" /> Hủy vé
+                  </button>
+                )}
               </div>
             </div>
           ))}
         </div>
-      )}
+      </div>
     </div>
   );
 }

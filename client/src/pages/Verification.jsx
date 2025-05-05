@@ -1,11 +1,11 @@
-import { useState, useContext, useEffect } from 'react';
-import { Navigate } from 'react-router-dom';
-import axios from 'axios';
-import { UserContext } from '../UserContext';
-import QrReader from 'react-qr-scanner';
+import { useState, useEffect } from "react";
+import { Navigate } from "react-router-dom";
+import { useFirebaseAuth } from "../FirebaseAuthContext";
+import axios from "axios";
+import QrScanner from 'react-qr-scanner';
 
 export default function Verification() {
-  const { user, ready } = useContext(UserContext);
+  const { user, ready } = useFirebaseAuth();
   const [ticketId, setTicketId] = useState('');
   const [verificationResult, setVerificationResult] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -20,12 +20,29 @@ export default function Verification() {
     }
   }, [ready, user]);
 
+  // Xử lý khi quét được mã QR
   const handleQrScan = (data) => {
     if (data) {
       try {
-        // Gửi toàn bộ dữ liệu QR code để server xử lý
-        setTicketId(data.text);
-        verifyTicket(data.text);
+        // Có thể data là một JSON string hoặc chỉ là mã vé đơn giản
+        let ticketData;
+        try {
+          // Thử parse dữ liệu là JSON
+          ticketData = JSON.parse(data.text);
+          console.log("Parsed QR data:", ticketData);
+          
+          // Nếu parse thành công, gửi ticketId từ object
+          const id = ticketData.ticketId;
+          if (id) {
+            setTicketId(id);
+            verifyTicket(id);
+          }
+        } catch (e) {
+          // Nếu không phải JSON, sử dụng trực tiếp data như là ticketId
+          console.log("Using raw QR data as ticketId:", data.text);
+          setTicketId(data.text);
+          verifyTicket(data.text);
+        }
         setUsingCamera(false);
       } catch (error) {
         console.error("Lỗi khi xử lý QR code:", error);
@@ -34,27 +51,52 @@ export default function Verification() {
     }
   };
 
+  // Xử lý lỗi camera
   const handleQrError = (err) => {
-    setQrError('Không thể truy cập camera: ' + err);
+    console.error("Camera error:", err);
+    setQrError('Không thể truy cập camera: ' + err.message);
   };
 
+  // Hàm xác thực vé
   const verifyTicket = async (id = null) => {
     const ticketToVerify = id || ticketId;
-    if (!ticketToVerify.trim()) return;
+    if (!ticketToVerify.trim()) {
+      setError("Vui lòng nhập mã vé");
+      return;
+    }
     
     setLoading(true);
+    setError(''); // Xóa lỗi cũ
+    
     try {
-      const response = await axios.get(`/verify-ticket/${ticketToVerify}`);
+      // Đảm bảo token được gửi cùng request
+      const token = localStorage.getItem('firebaseToken');
+      if (token) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      }
+      
+      console.log(`Đang gửi yêu cầu xác thực mã vé: ${ticketToVerify}`);
+      
+      // Gửi request tới API
+      const response = await axios.post("/verify-ticket", { 
+        ticketId: ticketToVerify 
+      });
+      
+      console.log("Phản hồi từ server:", response.data);
+      
+      // Cập nhật kết quả xác thực
       setVerificationResult({
-        valid: true,
+        valid: response.data.valid,
         message: response.data.message,
         ticket: response.data.ticket
       });
-    } catch (error) {
+    } catch (err) {
+      console.error("Lỗi khi xác thực vé:", err);
+      
       setVerificationResult({
         valid: false,
-        message: error.response?.data?.message || 'Không thể xác thực vé',
-        ticket: error.response?.data?.ticket
+        message: err.response?.data?.message || 'Không thể xác thực vé',
+        error: err.response?.data?.error || err.message
       });
     } finally {
       setLoading(false);
@@ -111,48 +153,51 @@ export default function Verification() {
         {usingCamera && (
           <div className="mt-4">
             <div className="max-w-md mx-auto border-4 border-gray-300 rounded-xl overflow-hidden">
-              <QrReader
+              <QrScanner
                 delay={300}
                 onError={handleQrError}
                 onScan={handleQrScan}
                 style={{ width: '100%' }}
+                constraints={{
+                  video: { facingMode: "environment" }
+                }}
               />
             </div>
             {qrError && <p className="text-red-500 mt-2">{qrError}</p>}
+            <p className="text-sm text-gray-500 mt-2">
+              Đưa mã QR vào khung để quét. Đảm bảo mã QR nằm trong vùng quét và đủ sáng.
+            </p>
           </div>
         )}
       </div>
 
       {verificationResult && (
-        <div className={`p-6 rounded-lg shadow-sm ${verificationResult.valid ? 'bg-green-50' : 'bg-red-50'}`}>
-          <h2 className={`text-2xl font-bold mb-4 ${verificationResult.valid ? 'text-green-700' : 'text-red-700'}`}>
-            {verificationResult.valid ? 'Vé hợp lệ' : 'Vé không hợp lệ'}
-          </h2>
-          <p className="text-lg mb-4">{verificationResult.message}</p>
+        <div className={`p-6 rounded-lg shadow-md mb-6 ${verificationResult.valid ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+          <h2 className="text-xl font-semibold mb-4">Kết quả xác thực</h2>
+          
+          <div className={`text-xl font-bold mb-4 ${verificationResult.valid ? 'text-green-600' : 'text-red-600'}`}>
+            {verificationResult.message}
+          </div>
           
           {verificationResult.ticket && (
-            <div className="border-t border-gray-200 pt-4 mt-4">
-              <h3 className="text-lg font-semibold mb-2">Thông tin vé:</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <p><span className="font-medium">Ticket ID:</span> {verificationResult.ticket.ticketId}</p>
-                  <p><span className="font-medium">Sự kiện:</span> {verificationResult.ticket.eventTitle}</p>
-                  <p><span className="font-medium">Người sở hữu:</span> {verificationResult.ticket.userName}</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <div>
+                <h3 className="font-medium mb-2">Thông tin vé:</h3>
+                <div className="space-y-1">
+                  <p><span className="font-medium">Sự kiện:</span> {verificationResult.ticket.ticketDetails.eventname}</p>
+                  <p><span className="font-medium">Ngày:</span> {new Date(verificationResult.ticket.ticketDetails.eventdate).toLocaleDateString('vi-VN')}</p>
+                  <p><span className="font-medium">Giờ:</span> {verificationResult.ticket.ticketDetails.eventtime}</p>
                 </div>
-                {verificationResult.valid && verificationResult.ticket.eventDate && (
-                  <div>
-                    <p><span className="font-medium">Ngày:</span> {new Date(verificationResult.ticket.eventDate).toLocaleDateString()}</p>
-                    <p><span className="font-medium">Giờ:</span> {verificationResult.ticket.eventTime}</p>
-                    <p><span className="font-medium">Địa điểm:</span> {verificationResult.ticket.location}</p>
-                  </div>
-                )}
               </div>
               
-              {verificationResult.ticket.usedAt && (
-                <p className="mt-4 text-sm text-gray-600">
-                  <span className="font-medium">Đã sử dụng lúc:</span> {new Date(verificationResult.ticket.usedAt).toLocaleString()}
-                </p>
-              )}
+              <div>
+                <h3 className="font-medium mb-2">Thông tin người mua:</h3>
+                <div className="space-y-1">
+                  <p><span className="font-medium">Tên:</span> {verificationResult.ticket.ticketDetails.name}</p>
+                  <p><span className="font-medium">Email:</span> {verificationResult.ticket.ticketDetails.email}</p>
+                  <p><span className="font-medium">Số điện thoại:</span> {verificationResult.ticket.ticketDetails.contactNo}</p>
+                </div>
+              </div>
             </div>
           )}
         </div>

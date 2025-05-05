@@ -9,22 +9,33 @@ import { UserContext } from "../UserContext";
 export default function EventPage() {
   const { id } = useParams();
   const [event, setEvent] = useState(null);
+  const [loading, setLoading] = useState(true);
   const { user } = useContext(UserContext);
   const navigate = useNavigate();
 
-  //! Fetching the event data from server by ID ------------------------------------------
+  // Fetch event data
   useEffect(() => {
-    if (!id) {
-      return;
+    if (!id) return;
+    
+    setLoading(true);
+    // Thêm token nếu cần thiết
+    const token = localStorage.getItem('firebaseToken');
+    if (token) {
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     }
-    axios.get(`/event/${id}`).then(response => {
-      setEvent(response.data);
-    }).catch((error) => {
-      console.error("Error fetching events:", error);
-    });
+    
+    axios.get(`/event/${id}`)
+      .then(response => {
+        console.log("Event data received:", response.data);
+        setEvent(response.data);
+        setLoading(false);
+      })
+      .catch((error) => {
+        console.error("Error fetching event:", error);
+        setLoading(false);
+      });
   }, [id]);
 
-  //! Handle Delete Event -------------------------------------------------
   const handleDeleteEvent = async () => {
     if (window.confirm("Bạn có chắc chắn muốn xóa sự kiện này không?")) {
       try {
@@ -33,113 +44,134 @@ export default function EventPage() {
         navigate("/");
       } catch (error) {
         console.error("Lỗi khi xóa sự kiện:", error);
-        alert("Không thể xóa sự kiện");
+        alert("Xóa sự kiện thất bại: " + error.response?.data?.error || error.message);
       }
     }
   };
 
-  //! Copy Functionalities -----------------------------------------------
+  // Add sharing functionality
   const handleCopyLink = () => {
-    const linkToShare = window.location.href;
-    navigator.clipboard.writeText(linkToShare).then(() => {
-      alert('Link copied to clipboard!');
-    });
+    navigator.clipboard.writeText(window.location.href);
+    alert("Đã sao chép liên kết vào clipboard!");
   };
 
   const handleWhatsAppShare = () => {
-    const linkToShare = window.location.href;
-    const whatsappMessage = encodeURIComponent(`${linkToShare}`);
-    window.open(`whatsapp://send?text=${whatsappMessage}`);
+    const text = `Tham gia sự kiện "${event.title}" với tôi: ${window.location.href}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`);
   };
 
   const handleFacebookShare = () => {
-    const linkToShare = window.location.href;
-    const facebookShareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(linkToShare)}`;
-    window.open(facebookShareUrl);
+    window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.href)}`);
   };
-  
-  if (!event) return '';
-  return (
-    <div className="flex flex-col mx-5 xl:mx-32 md:mx-10 mt-5 flex-grow">
-<div>
-  {event.image ? (
-    <img 
-      src={`http://localhost:4000/uploads/${event.image}`} 
-      alt={event.title} 
-      height="500px" 
-      width="1440px" 
-      className='rounded object-fill aspect-16:9'
-    />
-  ) : (
-    <div className='rounded bg-gray-100 aspect-16:9 flex items-center justify-center'>
-      <p className="text-gray-400">Không có hình ảnh</p>
-    </div>
-  )}
-</div> 
-      {/* FIXME: This is a demo image after completing the create event function delete this */}
 
-      <div className="flex justify-between mt-8 mx-2">
-        <h1 className="text-3xl md:text-5xl font-extrabold">{event.title.toUpperCase()}</h1>
-        <div className="flex">
-          <Link to={'/event/'+event._id+ '/ordersummary'}>
-            <button className="primary">Book Ticket</button>  
-          </Link>
-          {user && event && (user.role === 'admin' || String(event.owner) === String(user._id) || String(event.owner) === String(user.name)) && (
-            <button 
-              onClick={handleDeleteEvent}
-              className="bg-red-500 text-white py-2 px-4 rounded-md hover:bg-red-600 ml-2"
-            >
-              Xóa sự kiện
-            </button>
-          )}
-        </div>
-      </div>
-      <div className="mx-2">
-        <h2 className="text-md md:text-xl font-bold mt-3 text-primarydark">{event.ticketPrice === 0? 'Free' : 'LKR. '+ event.ticketPrice}</h2>
-      </div>
-      <div className="mx-2 mt-5 text-md md:text-lg truncate-3-lines">
-        {event.description}
-      </div>
-      <div className="mx-2 mt-5 text-md md:text-xl font-bold text-primarydark">
-        Organized By {event.organizedBy}
-      </div>
-      <div className="mx-2 mt-5">
-        <h1 className="text-md md:text-xl font-extrabold">When and Where </h1>
-        <div className="sm:mx-5 lg:mx-32 mt-6 flex flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <AiFillCalendar className="w-auto h-5 text-primarydark "/>
-            <div className="flex flex-col gap-1">
-              <h1 className="text-md md:text-lg font-extrabold">Date and Time</h1>
-              <div className="text-sm md:text-lg">
-                Date: {event.eventDate.split("T")[0]} <br />Time: {event.eventTime}
-              </div>
+  if (loading) return (
+    <div className="min-h-screen flex justify-center items-center">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+    </div>
+  );
+
+  if (!event) return (
+    <div className="min-h-screen flex flex-col justify-center items-center">
+      <h2 className="text-2xl font-bold text-red-500">Không tìm thấy sự kiện!</h2>
+      <p className="mt-2">Sự kiện không tồn tại hoặc đã bị xóa</p>
+      <button 
+        onClick={() => navigate('/')}
+        className="mt-4 bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600"
+      >
+        Quay về trang chủ
+      </button>
+    </div>
+  );
+
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-8">
+      {/* Hiển thị thông tin sự kiện */}
+      <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+        {event.image && (
+          <img 
+            src={`/uploads/${event.image}`} 
+            alt={event.title} 
+            className="w-full h-64 object-cover object-center"
+          />
+        )}
+        
+        <div className="p-6">
+          <div className="flex justify-between items-start">
+            <h1 className="text-3xl font-bold text-gray-800">{event.title}</h1>
+            {/* Hiển thị trạng thái phê duyệt */}
+            {event.isApproved ? (
+              <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">Đã duyệt</span>
+            ) : (
+              <span className="bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded-full">Chờ duyệt</span>
+            )}
+          </div>
+          
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <p className="text-gray-600"><span className="font-semibold">Tổ chức bởi:</span> {event.organizedBy}</p>
+              <p className="text-gray-600">
+                <span className="font-semibold">Ngày:</span> {new Date(event.eventDate).toLocaleDateString('vi-VN')}
+              </p>
+              <p className="text-gray-600"><span className="font-semibold">Giờ:</span> {event.eventTime}</p>
+              <p className="text-gray-600"><span className="font-semibold">Địa điểm:</span> {event.location}</p>
+              <p className="text-gray-600"><span className="font-semibold">Loại sự kiện:</span> {event.eventType}</p>
+            </div>
+            <div>
+              <p className="text-gray-600"><span className="font-semibold">Giá vé:</span> {event.ticketPrice.toLocaleString('vi-VN')} VNĐ</p>
+              <p className="text-gray-600"><span className="font-semibold">Số lượng:</span> {event.Quantity || 'Không giới hạn'}</p>
             </div>
           </div>
-          <div className="">
-            <div className="flex items-center gap-4">
-              <MdLocationPin className="w-auto h-5 text-primarydark "/>
-              <div className="flex flex-col gap-1">
-                <h1 className="text-md md:text-lg font-extrabold">Location</h1>
-                <div className="text-sm md:text-lg">
-                  {event.location}
-                </div>
-              </div>
+          
+          <div className="mt-6">
+            <h3 className="text-xl font-semibold text-gray-800">Mô tả</h3>
+            <div className="mt-2 text-gray-600 whitespace-pre-wrap">{event.description}</div>
+          </div>
+          
+          <div className="mt-8 flex flex-wrap gap-3">
+            {/* Nút đặt vé - chỉ hiển thị khi sự kiện đã được phê duyệt */}
+            {event.isApproved && (
+              <button 
+                onClick={() => navigate(`/event/${event._id}/ordersummary`)}
+                className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600"
+              >
+                Đặt vé
+              </button>
+            )}
+            
+            {/* Nút sửa/xóa - chỉ hiển thị cho chủ sự kiện hoặc admin */}
+            {user && (user._id === (event.owner?._id || event.owner) || user.role === 'admin' || user.role === 'organizer') && (
+              <>
+                <button 
+                  onClick={() => navigate(`/account/events/${event._id}/edit`)}
+                  className="bg-yellow-500 text-white px-4 py-2 rounded-md hover:bg-yellow-600"
+                >
+                  Sửa sự kiện
+                </button>
+                <button 
+                  onClick={handleDeleteEvent}
+                  className="bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600"
+                >
+                  Xóa sự kiện
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Phần chia sẻ */}
+          <div className="mt-6">
+            <h3 className="text-xl font-semibold text-gray-800">Chia sẻ sự kiện này</h3>
+            <div className="mt-2 flex gap-4">
+              <button onClick={handleCopyLink}>
+                <FaCopy className="w-auto h-6" />
+              </button>
+              <button onClick={handleWhatsAppShare}>
+                <FaWhatsappSquare className="w-auto h-6" />
+              </button>
+              <button onClick={handleFacebookShare}>
+                <FaFacebook className="w-auto h-6" />
+              </button>
             </div>
           </div>
-        </div>
-      </div>
-      <div className="mx-2 mt-5 text-md md:text-xl font-extrabold">
-        Share with friends
-        <div className="mt-10 flex gap-5 mx-10 md:mx-32 ">
-          <button onClick={handleCopyLink}>
-            <FaCopy className="w-auto h-6" />
-          </button>
-          <button onClick={handleWhatsAppShare}>
-            <FaWhatsappSquare className="w-auto h-6" />
-          </button>
-          <button onClick={handleFacebookShare}>
-            <FaFacebook className="w-auto h-6" />
-          </button>
         </div>
       </div>
     </div>

@@ -1,58 +1,78 @@
-const express = require("express");
-const cors = require("cors");
-require("dotenv").config();
-const mongoose = require("mongoose");
-const UserModel = require("./models/User");
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
-const cookieParser = require("cookie-parser");
-const multer = require("multer");
-const path = require("path");
+const express = require('express');
+const cors = require('cors');
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
+const multer = require('multer');
+const path = require('path');
 const fs = require('fs');
 const admin = require('./firebaseAdmin');
+const { v4: uuidv4 } = require('uuid');
+const { sendSMS } = require('./twilio'); // Added Twilio import
 
-// Xác định đường dẫn tuyệt đối cho thư mục uploads
-const uploadsPath = path.join(__dirname, 'uploads');
-
-// Đảm bảo thư mục uploads tồn tại
-if (!fs.existsSync(uploadsPath)) {
-  fs.mkdirSync(uploadsPath, { recursive: true });
-}
-
-const Ticket = require("./models/Ticket");
-const { generateTicketId } = require('./utils/ticketUtils'); 
-
+require('dotenv').config();
 const app = express();
-
-const bcryptSalt = bcrypt.genSaltSync(10);
-const jwtSecret = "bsbsfbrnsftentwnnwnwn";
-
+// Log để kiểm tra biến môi trường
+console.log("TWILIO_ACCOUNT_SID exists:", !!process.env.TWILIO_ACCOUNT_SID);
+console.log("TWILIO_AUTH_TOKEN exists:", !!process.env.TWILIO_AUTH_TOKEN);
+// Middleware
 app.use(express.json());
 app.use(cookieParser());
-app.use(
-   cors({
-      credentials: true,
-      origin: "http://localhost:5173",
-   })
-);
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use(cors({
+   credentials: true,
+   origin: 'http://localhost:5173'
+}));
 
-// Thiết lập middleware phục vụ file tĩnh sớm trong ứng dụng
-app.use('/uploads', express.static(uploadsPath));
+// Tạo thư mục uploads nếu chưa tồn tại
+const uploadsPath = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsPath)) {
+   fs.mkdirSync(uploadsPath, { recursive: true });
+}
 
-mongoose.connect(process.env.MONGO_URL);
+// MongoDB connection with improved options
+const mongoUrl = process.env.MONGO_URL || 'mongodb://localhost:27017/event-management';
+mongoose.connect(mongoUrl, {
+   useNewUrlParser: true,
+   useUnifiedTopology: true,
+   serverSelectionTimeoutMS: 30000, // Increase timeout to 30 seconds
+   socketTimeoutMS: 45000, // Socket timeout
+   connectTimeoutMS: 30000, // Connection timeout
+})
+.then(() => {
+   console.log('Đã kết nối với MongoDB');
+   // Only create admin after successful connection
+   createDefaultAdmin();
+})
+.catch(err => {
+   console.error('Lỗi kết nối MongoDB:', err);
+   // You may want to exit the process if DB connection fails
+   // process.exit(1);
+});
 
-// Tạo tài khoản admin mặc định nếu chưa tồn tại
+// Models
+const UserSchema = new mongoose.Schema({
+   uid: String, // Firebase User ID
+   name: String,
+   email: { type: String, unique: true },
+   password: String,
+   role: { type: String, enum: ['admin', 'organizer', 'participant'], default: 'participant' }
+});
+
+const UserModel = mongoose.model("User", UserSchema);
+
+// Tạo tài khoản admin mặc định
 const createDefaultAdmin = async () => {
    try {
-     // Kiểm tra trong MongoDB
+     // Kiểm tra xem tài khoản admin đã tồn tại chưa
      const adminExists = await UserModel.findOne({ email: "admin@eventems.com" });
+     let firebaseUid = null;
      
-     let firebaseUid;
-     // Kiểm tra trong Firebase Auth
+     // Tìm hoặc tạo tài khoản trong Firebase Auth
      try {
        const userRecord = await admin.auth().getUserByEmail("admin@eventems.com");
        firebaseUid = userRecord.uid;
-       console.log("Tài khoản admin đã tồn tại trong Firebase Auth");
      } catch (firebaseError) {
        // Nếu không tìm thấy trong Firebase, tạo mới
        if (firebaseError.code === 'auth/user-not-found') {
@@ -174,7 +194,7 @@ const isOrganizerOrAdmin = (req, res, next) => {
    }
 };
 
-// Middleware xác thực Firebase
+// Middleware xác thực Firebase token
 const authenticateFirebaseToken = async (req, res, next) => {
    // Kiểm tra header Authorization
    const authHeader = req.headers.authorization;
@@ -192,9 +212,15 @@ const authenticateFirebaseToken = async (req, res, next) => {
      // Tìm thông tin người dùng trong MongoDB
      let userDoc = await UserModel.findOne({ uid: decodedToken.uid });
      
-     // Nếu không tìm thấy người dùng, có thể họ đang đăng nhập lần đầu
+     // Nếu không tìm thấy, có thể đây là lần đăng nhập đầu tiên với Firebase
      if (!userDoc) {
-       return res.status(401).json({ error: 'Người dùng chưa được đăng ký trong hệ thống' });
+       // Tạo người dùng mới trong MongoDB với thông tin từ Firebase
+       userDoc = await UserModel.create({
+         uid: decodedToken.uid,
+         name: decodedToken.name || 'User',
+         email: decodedToken.email,
+         role: 'participant' // Mặc định là participant
+       });
      }
      
      // Lưu thông tin người dùng vào request
@@ -202,22 +228,30 @@ const authenticateFirebaseToken = async (req, res, next) => {
      next();
    } catch (error) {
      console.error('Lỗi xác thực Firebase token:', error);
-     res.status(401).json({ error: 'Token không hợp lệ hoặc đã hết hạn' });
+     return res.status(401).json({ error: 'Token không hợp lệ', details: error.message });
    }
- };
+};
 
-// Định nghĩa Event schema và model trước khi sử dụng trong middleware
+const ticketSchema = new mongoose.Schema({
+   ticketId: { type: String, default: () => uuidv4() },
+   userid: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+   eventId: { type: mongoose.Schema.Types.ObjectId, ref: 'Event' },
+   ticketDetails: Object,
+   checkedIn: { type: Boolean, default: false },
+   checkedInTime: Date
+});
+
+const Ticket = mongoose.model("Ticket", ticketSchema);
+
 const eventSchema = new mongoose.Schema({
-   owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // Lưu ID người tạo
    title: String,
-   description: String,
    organizedBy: String,
+   owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
    eventDate: Date,
    eventTime: String,
    location: String,
-   Participants: Number,
-   Count: Number,
-   Income: Number,
+   eventType: String,
+   description: String,
    ticketPrice: Number,
    Quantity: Number,
    image: String,
@@ -266,15 +300,8 @@ app.get("/test", (req, res) => {
 // Thêm route cho đường dẫn gốc
 app.get("/", (req, res) => {
    res.json({
-      message: "EventoEMS API đang chạy",
-      endpoints: [
-         "/test",
-         "/register",
-         "/login",
-         "/profile",
-         "/createEvent",
-         "/event/:id"
-      ]
+      status: 'API đang hoạt động',
+      message: 'Chào mừng đến với API của Hệ thống Quản lý Sự kiện!'
    });
 });
 
@@ -294,125 +321,47 @@ app.post("/register", async (req, res) => {
    }
 });
 
-app.post("/login", async (req, res) => {
-   const { email, password } = req.body;
-
-   const userDoc = await UserModel.findOne({ email });
-
-   if (!userDoc) {
-      return res.status(404).json({ error: "User not found" });
-   }
-
-   const passOk = bcrypt.compareSync(password, userDoc.password);
-   if (!passOk) {
-      return res.status(401).json({ error: "Invalid password" });
-   }
-
-   jwt.sign(
-      {
-         email: userDoc.email,
-         id: userDoc._id,
-      },
-      jwtSecret,
-      {},
-      (err, token) => {
-         if (err) {
-            return res.status(500).json({ error: "Failed to generate token" });
-         }
-         res.cookie("token", token).json(userDoc);
-      }
-   );
+// Route kiểm tra thông tin profile từ token Firebase
+app.get("/profile", authenticateFirebaseToken, async (req, res) => {
+   // Đã có thông tin người dùng từ middleware
+   res.json(req.user);
 });
 
-app.get("/profile", authenticateFirebaseToken, (req, res) => {
-   // Đã có thông tin user từ middleware authenticateFirebaseToken
-   const { _id, name, email, role, photoURL } = req.user;
-   res.json({ _id, name, email, role, photoURL });
- });
-
- app.post("/logout", (req, res) => {
-   // Không cần xóa cookie vì Firebase Auth không sử dụng cookie
-   res.json({ success: true });
-});
-
-// Sửa route createEvent để chỉ lưu tên file, không lưu đường dẫn đầy đủ
-app.post("/createEvent", authenticateFirebaseToken, isOrganizerOrAdmin, upload.single("image"), async (req, res) => {
+// Route tạo sự kiện mới với quyền kiểm tra
+app.post('/createEvent', authenticateFirebaseToken, isOrganizerOrAdmin, upload.single('image'), async (req, res) => {
    try {
-      const eventData = req.body;
+      const { title, organizedBy, eventDate, eventTime, location, eventType, description, ticketPrice, Quantity } = req.body;
       
-      // Chỉ lưu tên file thay vì đường dẫn đầy đủ
-      if (req.file) {
-         console.log("File uploaded:", req.file);
-         eventData.image = path.basename(req.file.path);
-      } else {
-         eventData.image = "";
-      }
+      // Đường dẫn ảnh nếu có
+      const image = req.file ? `/uploads/${req.file.filename}` : null;
       
-      // Lưu thông tin người tạo sự kiện
-      eventData.owner = req.user._id;
-      // Thêm trạng thái phê duyệt (mặc định là false)
-      eventData.isApproved = req.user.role === 'admin' ? true : false;
+      // Kiểm tra sự kiện có được tự động phê duyệt không (admin tạo = tự động phê duyệt)
+      const isApproved = req.user.role === 'admin';
       
-      const newEvent = new Event(eventData);
-      await newEvent.save();
-      
-      // Thêm thông báo thành công
-      const message = req.user.role === 'admin' 
-         ? "Sự kiện đã được tạo thành công và được phê duyệt tự động" 
-         : "Sự kiện đã được tạo thành công và đang chờ phê duyệt từ quản trị viên";
-      
-      res.status(201).json({
-         event: newEvent,
-         message: message,
-         success: true
+      const newEvent = await Event.create({
+         title,
+         organizedBy,
+         owner: req.user._id, // Lưu người tạo sự kiện
+         eventDate,
+         eventTime,
+         location,
+         eventType,
+         description,
+         ticketPrice,
+         Quantity,
+         image,
+         likes: 0,
+         isApproved
       });
+      
+      res.json(newEvent);
    } catch (error) {
       console.error("Lỗi khi tạo sự kiện:", error);
-      res.status(500).json({ error: "Không thể lưu sự kiện" });
+      res.status(500).json({ error: "Không thể tạo sự kiện", details: error.message });
    }
 });
 
-app.get("/createEvent", async (req, res) => {
-   try {
-      const events = await Event.find();
-      res.status(200).json(events);
-   } catch (error) {
-      res.status(500).json({ error: "Failed to fetch events from MongoDB" });
-   }
-});
-
-app.get("/event/:id", async (req, res) => {
-   const { id } = req.params;
-   try {
-      const event = await Event.findById(id);
-      res.json(event);
-   } catch (error) {
-      res.status(500).json({ error: "Failed to fetch event from MongoDB" });
-   }
-});
-
-app.post("/event/:eventId", (req, res) => {
-   const eventId = req.params.eventId;
-
-   Event.findById(eventId)
-      .then((event) => {
-         if (!event) {
-            return res.status(404).json({ message: "Event not found" });
-         }
-
-         event.likes += 1;
-         return event.save();
-      })
-      .then((updatedEvent) => {
-         res.json(updatedEvent);
-      })
-      .catch((error) => {
-         console.error("Error liking the event:", error);
-         res.status(500).json({ message: "Server error" });
-      });
-});
-
-// Đảm bảo chỉ có một route "/events" - xóa route thừa và giữ lại route có middleware
+// Route lấy danh sách sự kiện với phân quyền
 app.get("/events", authenticateFirebaseToken, async (req, res) => {
    try {
      let events;
@@ -435,13 +384,23 @@ app.get("/events", authenticateFirebaseToken, async (req, res) => {
    }
 });
 
-app.get("/event/:id/ordersummary", async (req, res) => {
+app.get("/event/:id/ordersummary/paymentsummary", async (req, res) => {
    const { id } = req.params;
    try {
       const event = await Event.findById(id);
+      if (!event) {
+         return res.status(404).json({ error: "Không tìm thấy sự kiện" });
+      }
+      
+      // Kiểm tra nếu sự kiện chưa được phê duyệt
+      if (!event.isApproved) {
+         return res.status(403).json({ error: "Sự kiện này chưa được phê duyệt" });
+      }
+      
       res.json(event);
    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch event from MongoDB" });
+      console.error("Lỗi khi lấy thông tin sự kiện:", error);
+      res.status(500).json({ error: "Không thể lấy thông tin sự kiện từ cơ sở dữ liệu" });
    }
 });
 
@@ -468,174 +427,217 @@ app.post("/tickets", async (req, res) => {
         });
       }
       
-      // Tạo Ticket ID duy nhất
-      const ticketId = generateTicketId(
-         ticketDetails.eventId, 
-         ticketDetails.userid
+      const ticketId = uuidv4(); // Tạo ticketId duy nhất
+      
+      // Kiểm tra số điện thoại trước khi gửi SMS
+      const contactNo = ticketDetails.ticketDetails?.contactNo;
+      if (!contactNo) {
+        return res.status(400).json({
+          error: "Thiếu số điện thoại",
+          details: "Số điện thoại là bắt buộc để gửi thông báo SMS"
+        });
+      }
+      
+      // Định dạng số điện thoại
+      const phoneNumber = contactNo.startsWith('+') 
+        ? contactNo 
+        : `+84${contactNo.replace(/^0/, '')}`;
+      
+      try {
+        // Gửi SMS
+        const smsResult = await sendSMS(
+          phoneNumber,
+          `Xin chào ${ticketDetails.ticketDetails.name}, vé của bạn cho sự kiện ${ticketDetails.ticketDetails.eventname} đã được đặt thành công!`
+        );
+        
+        if (smsResult.status === 'error') {
+          return res.status(400).json({
+            error: "Không thể gửi SMS",
+            details: smsResult.error
+          });
+        }
+        
+        // SMS gửi thành công, tạo vé
+        const newTicket = new Ticket({
+          ...ticketDetails,
+          ticketId
+        });
+        
+        await newTicket.save();
+        
+        res.json({ 
+          success: true, 
+          message: "Tạo vé thành công và đã gửi SMS", 
+          ticket: newTicket 
+        });
+      } catch (smsError) {
+        return res.status(500).json({
+          error: "Lỗi khi gửi SMS",
+          details: smsError.message
+        });
+      }
+   } catch (error) {
+      console.error("Lỗi khi tạo vé:", error);
+      res.status(500).json({ error: "Không thể tạo vé", details: error.message });
+   }
+});
+
+// Route update QR code cho vé
+app.put("/tickets/:id/update-qr", async (req, res) => {
+   try {
+      const { id } = req.params;
+      const { qr } = req.body;
+      
+      if (!qr) {
+         return res.status(400).json({ error: "QR code không được để trống" });
+      }
+      
+      const updatedTicket = await Ticket.findByIdAndUpdate(
+         id,
+         { "ticketDetails.qr": qr },
+         { new: true }
       );
       
-      // Thêm ticketId vào dữ liệu vé
-      const newTicket = new Ticket({
-         ...ticketDetails,
-         ticketId
-      });
+      if (!updatedTicket) {
+         return res.status(404).json({ error: "Không tìm thấy vé" });
+      }
       
-      await newTicket.save();
-      return res.status(201).json({ ticket: newTicket });
+      res.json(updatedTicket);
    } catch (error) {
-      console.error("Error creating ticket:", error.message);
-      return res.status(500).json({ error: "Failed to create ticket", details: error.message });
+      console.error("Lỗi khi cập nhật QR code:", error);
+      res.status(500).json({ error: "Không thể cập nhật QR code" });
    }
 });
-
-app.get("/tickets/:id", async (req, res) => {
+// Route gửi SMS xác thực
+app.post("/send-verification-sms", async (req, res) => {
    try {
-      const tickets = await Ticket.find();
-      res.json(tickets);
-   } catch (error) {
-      console.error("Error fetching tickets:", error);
-      res.status(500).json({ error: "Failed to fetch tickets" });
-   }
-});
-
-// Endpoint xác thực vé
-app.get("/verify-ticket/:id", authenticateFirebaseToken, async (req, res) => {
-   try {
-     const searchId = req.params.id;
-     let ticket;
+     const { phoneNumber, code, eventName } = req.body;
      
-     // Kiểm tra nếu dữ liệu là JSON từ QR code
+     if (!phoneNumber || !code) {
+       return res.status(400).json({ 
+         error: "Thiếu thông tin", 
+         details: "Số điện thoại và mã xác thực là bắt buộc" 
+       });
+     }
+     
+     console.log(`Đang gửi mã xác thực ${code} đến số ${phoneNumber} cho sự kiện ${eventName}`);
+     
+     // Gửi SMS chứa mã xác thực
      try {
-       const qrData = JSON.parse(searchId);
+       const smsResult = await sendSMS(
+         phoneNumber,
+         `[${eventName}] Mã xác thực đặt vé của bạn là: ${code}. Vui lòng nhập mã này để hoàn tất quá trình đặt vé.`
+       );
        
-       // Ưu tiên tìm theo ticketId nếu có trong QR code
-       if (qrData && qrData.ticketId) {
-         ticket = await Ticket.findOne({ ticketId: qrData.ticketId })
-           .populate('eventId')
-           .populate('userid', 'name email');
-         
-         if (ticket) {
-           console.log("Đã tìm thấy vé bằng ticketId từ QR:", qrData.ticketId);
-         }
-       }
+       console.log("Kết quả gửi SMS:", smsResult);
        
-       // Nếu không tìm thấy bằng ticketId, thử tìm theo eventId và name
-       if (!ticket && qrData && qrData.eventId && qrData.name) {
-         ticket = await Ticket.findOne({ 
-           eventId: qrData.eventId,
-           'ticketDetails.name': new RegExp(qrData.name, 'i')
-         })
-         .populate('eventId')
-         .populate('userid', 'name email');
-         
-         if (ticket) {
-           console.log("Đã tìm thấy vé bằng eventId và name từ QR");
-         }
-       }
-     } catch (e) {
-       // Không phải JSON, bỏ qua
-       console.log("Dữ liệu không phải JSON:", e.message);
-     }
-     
-     // Nếu vẫn không tìm thấy, tiếp tục tìm bằng các phương thức khác
-     if (!ticket && mongoose.Types.ObjectId.isValid(searchId)) {
-       ticket = await Ticket.findById(searchId)
-         .populate('eventId')
-         .populate('userid', 'name email');
+       // Trả về thành công mà không kèm mã giả lập
+       return res.json({
+         success: true,
+         message: "SMS xác thực đã được gửi thành công"
+       });
        
-       if (ticket) {
-         console.log("Đã tìm thấy vé bằng ID MongoDB");
-       }
-     }
-     
-     // Tìm bằng ticketId như là chuỗi thông thường
-     if (!ticket) {
-       ticket = await Ticket.findOne({ ticketId: searchId })
-         .populate('eventId')
-         .populate('userid', 'name email');
+     } catch (smsError) {
+       console.error("Lỗi khi gửi SMS xác thực:", smsError);
        
-       if (ticket) {
-         console.log("Đã tìm thấy vé bằng ticketId trực tiếp");
-       }
-     }
-     
-     if (!ticket) {
-       return res.status(404).json({ 
-         valid: false, 
-         message: "Vé không tồn tại" 
+       // Trả về lỗi thay vì giả lập
+       return res.status(500).json({
+         error: "Không thể gửi SMS xác thực",
+         details: smsError.message 
        });
      }
-     
-     // Kiểm tra xem vé đã được sử dụng chưa
-     if (ticket.isUsed) {
-       return res.status(400).json({ 
-         valid: false, 
-         message: "Vé đã được sử dụng", 
-         ticket: {
-           _id: ticket._id,
-           ticketId: ticket.ticketId,
-           eventTitle: ticket.ticketDetails.eventname,
-           userName: ticket.ticketDetails.name,
-           usedAt: ticket.usedAt
-         }
-       });
-     }
-     
-     // Kiểm tra xem sự kiện đã diễn ra chưa
-     const eventDate = new Date(ticket.ticketDetails.eventdate);
-     const today = new Date();
-     if (eventDate < today) {
-       return res.status(400).json({ 
-         valid: false, 
-         message: "Sự kiện đã kết thúc" 
-       });
-     }
-     
-     // Cập nhật trạng thái vé
-     ticket.isUsed = true;
-     ticket.usedAt = new Date();
-     await ticket.save();
-     
-     return res.json({
-       valid: true,
-       message: "Vé hợp lệ",
-       ticket: {
-         _id: ticket._id,
-         ticketId: ticket.ticketId,
-         eventTitle: ticket.ticketDetails.eventname,
-         eventDate: ticket.ticketDetails.eventdate,
-         eventTime: ticket.ticketDetails.eventtime,
-         location: ticket.eventId.location,
-         userName: ticket.ticketDetails.name,
-         usedAt: ticket.usedAt
-       }
-     });
    } catch (error) {
-     console.error("Lỗi khi xác thực vé:", error);
-     res.status(500).json({ 
-       valid: false, 
-       message: "Lỗi khi xác thực vé" 
-     });
+     console.error("Lỗi khi xử lý yêu cầu:", error);
+     res.status(500).json({ error: "Không thể gửi SMS xác thực", details: error.message });
+   }
+});
+// Route kiểm tra vé
+// Thêm route xác thực vé sau các route khác và trước app.listen
+app.post("/verify-ticket", async (req, res) => {
+  try {
+    const { ticketId } = req.body;
+    
+    console.log("Đang xác thực vé với mã:", ticketId);
+    
+    if (!ticketId) {
+      console.log("Lỗi: Không có mã vé được cung cấp");
+      return res.status(400).json({ 
+        valid: false, 
+        message: "Vui lòng cung cấp mã vé để xác thực" 
+      });
+    }
+    
+    // Tìm vé theo mã
+    const ticket = await Ticket.findOne({ ticketId: ticketId });
+    console.log("Kết quả tìm kiếm vé:", ticket ? "Tìm thấy" : "Không tìm thấy");
+    
+    if (!ticket) {
+      return res.status(404).json({ 
+        valid: false, 
+        message: "Vé không hợp lệ hoặc không tồn tại" 
+      });
+    }
+    
+    // Kiểm tra xem vé đã được sử dụng chưa
+    if (ticket.checkedIn) {
+      console.log(`Vé đã được sử dụng vào: ${ticket.checkedInTime}`);
+      return res.json({
+        valid: false,
+        message: `Vé đã được sử dụng vào lúc ${new Date(ticket.checkedInTime).toLocaleString('vi-VN')}`,
+        ticket
+      });
+    }
+    
+    // Đánh dấu vé đã được sử dụng
+    ticket.checkedIn = true;
+    ticket.checkedInTime = new Date();
+    await ticket.save();
+    console.log("Xác thực vé thành công, đã cập nhật trạng thái");
+    
+    res.json({
+      valid: true,
+      message: "Vé hợp lệ! Xác thực thành công.",
+      ticket
+    });
+  } catch (error) {
+    console.error("Lỗi khi xác minh vé:", error);
+    res.status(500).json({ 
+      valid: false,
+      message: "Không thể xác minh vé: " + error.message
+    });
+  }
+});
+// Thêm middleware xác thực vào route lấy chi tiết sự kiện
+app.get("/event/:id", async (req, res) => {
+   try {
+     const { id } = req.params;
+     
+     // Kiểm tra định dạng ID hợp lệ
+     if (!mongoose.Types.ObjectId.isValid(id)) {
+       return res.status(400).json({ error: "ID sự kiện không hợp lệ" });
+     }
+     
+     const event = await Event.findById(id).populate('owner', 'name');
+     
+     if (!event) {
+       return res.status(404).json({ error: "Không tìm thấy sự kiện" });
+     }
+     
+     res.json(event);
+   } catch (error) {
+     console.error("Lỗi khi lấy thông tin sự kiện:", error);
+     res.status(500).json({ error: "Không thể lấy thông tin sự kiện", details: error.message });
    }
  });
-
- app.get("/tickets/user/:userId", authenticateFirebaseToken, async (req, res) => {
+// Route lấy danh sách vé của người dùng
+app.get("/tickets/user/:userId", async (req, res) => {
    try {
-     const userId = req.params.userId;
-     console.log("Fetching tickets for user ID:", userId);
+     const { userId } = req.params;
+     const userTickets = await Ticket.find({ userid: userId })
+       .populate('eventId')
+       .sort({ _id: -1 });
      
-     // Kiểm tra xem userId có phải là ObjectId hợp lệ không
-     if (!mongoose.Types.ObjectId.isValid(userId)) {
-       return res.status(400).json({ error: "Invalid user ID format" });
-     }
-     
-     // Tìm vé dựa trên userid
-     const tickets = await Ticket.find({ userid: userId })
-       .populate('eventId', 'title eventDate eventTime location')  // Thêm thông tin event
-       .sort({ 'ticketDetails.eventdate': 1 });  // Sắp xếp theo ngày event
- 
-     console.log(`Found ${tickets.length} tickets for user ${userId}`);
-     res.json(tickets);
+     res.json(userTickets);
    } catch (error) {
      console.error("Error fetching user tickets:", error);
      res.status(500).json({ error: "Failed to fetch user tickets", details: error.message });
@@ -695,6 +697,15 @@ app.put("/event/:id/approve", authenticateFirebaseToken, isAdmin, async (req, re
          return res.status(404).json({ error: "Không tìm thấy sự kiện" });
       }
       
+      // Gửi SMS thông báo cho chủ sự kiện
+      const eventWithOwner = await Event.findById(eventId).populate('owner');
+      if (eventWithOwner && eventWithOwner.owner && eventWithOwner.owner.phone) {
+        await sendSMS(
+          eventWithOwner.owner.phone,
+          `Sự kiện "${event.title}" của bạn đã được phê duyệt và hiển thị công khai.`
+        );
+      }
+      
       res.json(event);
    } catch (error) {
       console.error("Lỗi khi phê duyệt sự kiện:", error);
@@ -745,90 +756,124 @@ app.put("/users/:id/role", authenticateFirebaseToken, isAdmin, async (req, res) 
 
 app.delete("/users/:id", authenticateFirebaseToken, isAdmin, async (req, res) => {
    try {
-     const userId = req.params.id;
-     
-     // Kiểm tra không cho phép xóa tài khoản admin mặc định
-     const userToDelete = await UserModel.findById(userId);
-     if (!userToDelete) {
-       return res.status(404).json({ error: "Không tìm thấy người dùng" });
-     }
-     
-     // Không cho phép xóa tài khoản admin@eventems.com
-     if (userToDelete.email === "admin@eventems.com") {
-       return res.status(403).json({ error: "Không thể xóa tài khoản admin mặc định" });
-     }
-     
-     // Xóa người dùng
-     await UserModel.findByIdAndDelete(userId);
-     
-     // Xóa các sự kiện do người dùng tạo
-     await Event.deleteMany({ owner: userId });
-     
-     // Xóa các vé của người dùng
-     await Ticket.deleteMany({ userid: userId });
-     
-     res.json({ message: "Người dùng đã được xóa thành công" });
+      const userId = req.params.id;
+      
+      // Tìm người dùng cần xóa
+      const user = await UserModel.findById(userId);
+      if (!user) {
+         return res.status(404).json({ error: "Không tìm thấy người dùng" });
+      }
+      
+      // Xóa tất cả sự kiện của người dùng này
+      const events = await Event.find({ owner: userId });
+      for (const event of events) {
+         // Xóa các vé liên quan đến sự kiện
+         await Ticket.deleteMany({ eventId: event._id });
+      }
+      await Event.deleteMany({ owner: userId });
+      
+      // Xóa tất cả vé của người dùng
+      await Ticket.deleteMany({ userid: userId });
+      
+      // Xóa người dùng
+      await UserModel.findByIdAndDelete(userId);
+      
+      res.json({ message: "Người dùng đã được xóa thành công" });
    } catch (error) {
-     console.error("Lỗi khi xóa người dùng:", error);
-     res.status(500).json({ error: "Không thể xóa người dùng" });
+      console.error("Lỗi khi xóa người dùng:", error);
+      res.status(500).json({ error: "Không thể xóa người dùng" });
    }
- });
- 
-const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-   console.log(`Server is running on port ${PORT}`);
-   console.log(`Static files served from: ${uploadsPath}`);
 });
 
-app.put("/tickets/:id/update-qr", async (req, res) => {
-   try {
-     const { qr } = req.body;
-     const ticketId = req.params.id;
-     
-     const updatedTicket = await Ticket.findByIdAndUpdate(
-       ticketId,
-       { 'ticketDetails.qr': qr },
-       { new: true }
-     );
-     
-     if (!updatedTicket) {
-       return res.status(404).json({ error: "Không tìm thấy vé" });
-     }
-     
-     res.json(updatedTicket);
-   } catch (error) {
-     console.error("Lỗi khi cập nhật QR code:", error);
-     res.status(500).json({ error: "Không thể cập nhật QR code", details: error.message });
-   }
- });
+// Thêm endpoint mới để gửi nhắc nhở sự kiện
+app.get("/send-event-reminders", async (req, res) => {
+  try {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    // Tìm sự kiện diễn ra ngày mai
+    const upcomingEvents = await Event.find({
+      eventDate: {
+        $gte: new Date(tomorrow.setHours(0,0,0,0)),
+        $lt: new Date(tomorrow.setHours(23,59,59,999))
+      },
+      isApproved: true
+    });
+    
+    let remindersSent = 0;
+    
+    // Gửi nhắc nhở cho mỗi người đã đăng ký tham gia
+    for (const event of upcomingEvents) {
+      const tickets = await Ticket.find({ eventId: event._id })
+        .populate('userid', 'phone');
+      
+      for (const ticket of tickets) {
+        if (ticket.ticketDetails && ticket.ticketDetails.contactNo) {
+          await sendSMS(
+            ticket.ticketDetails.contactNo,
+            `Nhắc nhở: Sự kiện "${event.title}" mà bạn đã đăng ký diễn ra vào ngày mai tại ${event.location} lúc ${event.eventTime}.`
+          );
+          remindersSent++;
+        }
+      }
+    }
+    
+    res.json({ success: true, remindersSent, eventsCount: upcomingEvents.length });
+  } catch (error) {
+    console.error("Lỗi khi gửi nhắc nhở sự kiện:", error);
+    res.status(500).json({ error: "Không thể gửi nhắc nhở sự kiện" });
+  }
+});
 
- app.post("/register-firebase-user", async (req, res) => {
+// Đặt port và khởi động server
+const bcryptSalt = bcrypt.genSaltSync(10);
+const jwtSecret = "your-secret-key";
+const port = process.env.PORT || 4000;
+
+app.listen(port, () => {
+   console.log(`Server đang chạy tại http://localhost:${port}`);
+});
+// Route gửi SMS xác thực
+// Route gửi SMS xác thực
+app.post("/send-verification-sms", async (req, res) => {
    try {
-     const { uid, name, email, photoURL, role } = req.body;
+     const { phoneNumber, code, eventName } = req.body;
      
-     // Kiểm tra xem người dùng đã tồn tại chưa
-     const existingUser = await UserModel.findOne({ uid });
-     if (existingUser) {
-       return res.status(409).json({ error: "Người dùng đã tồn tại" });
+     if (!phoneNumber || !code) {
+       return res.status(400).json({ 
+         error: "Thiếu thông tin", 
+         details: "Số điện thoại và mã xác thực là bắt buộc" 
+       });
      }
      
-     // Tạo người dùng mới
-     const newUser = await UserModel.create({
-       uid,
-       name,
-       email,
-       photoURL,
-       role: role || 'participant'
-     });
+     console.log(`Đang gửi mã xác thực ${code} đến số ${phoneNumber} cho sự kiện ${eventName}`);
      
-     res.status(201).json({
-       _id: newUser._id,
-       name: newUser.name,
-       email: newUser.email,
-       role: newUser.role
-     });
+     try {
+       // Gửi SMS chứa mã xác thực thực tế
+       const smsResult = await sendSMS(
+         phoneNumber,
+         `[${eventName}] Mã xác thực đặt vé của bạn là: ${code}. Vui lòng nhập mã này để hoàn tất quá trình đặt vé.`
+       );
+       
+       // Nếu thành công, trả về response thông báo đã gửi SMS
+       res.json({
+         success: true,
+         message: "SMS xác thực đã được gửi thành công đến điện thoại của bạn",
+         sid: smsResult.sid
+       });
+     } catch (smsError) {
+       console.error("Chi tiết lỗi khi gửi SMS:", smsError);
+       
+       // Thông báo lỗi rõ ràng
+       res.status(500).json({
+         success: false,
+         error: "Không thể gửi SMS xác thực",
+         details: smsError.message,
+         solution: "Hãy kiểm tra định dạng số điện thoại và cấu hình Twilio"
+       });
+     }
    } catch (error) {
-     console.error("Lỗi khi đăng ký người dùng Firebase:", error);
-     res.status(500).json({ error: "Không thể đăng ký người dùng" });
+     console.error("Lỗi khi xử lý yêu cầu:", error);
+     res.status(500).json({ error: "Không thể xử lý yêu cầu gửi SMS", details: error.message });
    }
  });

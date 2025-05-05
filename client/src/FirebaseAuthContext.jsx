@@ -98,36 +98,48 @@ export function FirebaseAuthProvider({ children }) {
   };
 
   // Hàm đăng nhập bằng Google
-  const loginWithGoogle = async () => {
+const loginWithGoogle = async () => {
+  try {
+    setLoading(true);
+    
+    // Cấu hình lại provider Google để đảm bảo nhận được các quyền cần thiết
+    googleProvider.setCustomParameters({
+      prompt: 'select_account'
+    });
+    
+    const result = await signInWithPopup(auth, googleProvider);
+    
+    // Lấy token ngay sau khi đăng nhập thành công
+    const token = await result.user.getIdToken();
+    localStorage.setItem('firebaseToken', token);
+    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    
+    // Đăng ký người dùng trong backend
     try {
-      setLoading(true);
-      const result = await signInWithPopup(auth, googleProvider);
-      
-      // Kiểm tra xem đã đăng ký chưa, nếu chưa thì đăng ký
-      try {
-        await axios.post('/register-firebase-user', {
-          uid: result.user.uid,
-          name: result.user.displayName || 'Người dùng Google',
-          email: result.user.email,
-          photoURL: result.user.photoURL,
-          role: 'participant'
-        });
-      } catch (error) {
-        // Nếu lỗi không phải do trùng lặp, ném lỗi
-        if (!error.response || error.response.status !== 409) {
-          throw error;
-        }
-        // Nếu lỗi do trùng lặp (409), nghĩa là người dùng đã tồn tại, bỏ qua
-      }
-      
-      return result.user;
+      await axios.post('/register-firebase-user', {
+        uid: result.user.uid,
+        name: result.user.displayName || 'Người dùng Google',
+        email: result.user.email,
+        photoURL: result.user.photoURL,
+        role: 'participant'
+      });
+      console.log("Đăng ký người dùng Firebase thành công");
     } catch (error) {
-      console.error("Lỗi đăng nhập Google:", error);
-      throw error;
-    } finally {
-      setLoading(false);
+      // Bỏ qua lỗi nếu người dùng đã tồn tại (mã lỗi 409)
+      if (!error.response || error.response.status !== 409) {
+        console.error("Lỗi khi đăng ký người dùng Firebase:", error);
+        // Không ném lỗi ở đây - vẫn cho phép đăng nhập ngay cả khi đăng ký backend thất bại
+      }
     }
-  };
+    
+    return result.user;
+  } catch (error) {
+    console.error("Chi tiết lỗi đăng nhập Google:", error);
+    throw error;
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Hàm đăng xuất
   const logout = async () => {
@@ -139,6 +151,54 @@ export function FirebaseAuthProvider({ children }) {
     }
   };
 
+    // Thêm hàm này vào FirebaseAuthContext.jsx
+  const refreshToken = async () => {
+    try {
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        // Force token refresh
+        const newToken = await currentUser.getIdToken(true);
+        localStorage.setItem('firebaseToken', newToken);
+        axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
+        return newToken;
+      }
+      return null;
+    } catch (error) {
+      console.error("Lỗi khi làm mới token:", error);
+      return null;
+    }
+  };
+  
+  // Thêm interceptor này bên trong FirebaseAuthProvider
+  useEffect(() => {
+    // Interceptor để tự động làm mới token khi hết hạn
+    const interceptor = axios.interceptors.response.use(
+      response => response,
+      async error => {
+        const originalRequest = error.config;
+        
+        if (error.response && 
+            error.response.status === 401 && 
+            !originalRequest._retry) {
+          
+          originalRequest._retry = true;
+          
+          // Thử làm mới token
+          const newToken = await refreshToken();
+          
+          if (newToken) {
+            // Cập nhật header và thử lại request
+            originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
+            return axios(originalRequest);
+          }
+        }
+        
+        return Promise.reject(error);
+      }
+    );
+    
+    return () => axios.interceptors.response.eject(interceptor);
+  }, []);
   // Giá trị context để cung cấp
   const contextValue = {
     user,
