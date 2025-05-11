@@ -10,6 +10,7 @@ const fs = require('fs');
 const admin = require('./firebaseAdmin');
 const { v4: uuidv4 } = require('uuid');
 const { sendSMS } = require('./twilio'); // Added Twilio import
+const stripeService = require('./stripeService'); // Added Stripe service import
 
 require('dotenv').config();
 const app = express();
@@ -822,6 +823,169 @@ app.get("/send-event-reminders", async (req, res) => {
   } catch (error) {
     console.error("Lỗi khi gửi nhắc nhở sự kiện:", error);
     res.status(500).json({ error: "Không thể gửi nhắc nhở sự kiện" });
+  }
+});
+
+// Route tạo payment intent
+app.post("/create-payment-intent", authenticateFirebaseToken, async (req, res) => {
+  try {
+    const { amount, eventId, eventName, userId, userEmail, userName } = req.body;
+      
+    if (!amount || !eventId || !userId) {
+      return res.status(400).json({ 
+        error: "Dữ liệu không hợp lệ", 
+        details: "Thiếu thông tin cần thiết để tạo payment intent" 
+      });
+    }
+    
+    console.log("Tạo payment intent với số tiền:", amount);
+    
+    const paymentIntent = await stripeService.createPaymentIntent(amount, {
+      eventId,
+      eventName,
+      userId,
+      userEmail,
+      userName
+    });
+    
+    // Kiểm tra kết quả từ stripeService
+    console.log("Payment intent được tạo:", {
+      id: paymentIntent.id,
+      clientSecretValid: !!paymentIntent.clientSecret
+    });
+    
+    if (!paymentIntent.clientSecret) {
+      throw new Error("Client secret không được tạo đúng cách");
+    }
+    
+    res.json(paymentIntent);
+  } catch (error) {
+    console.error("Chi tiết lỗi khi tạo payment intent:", error);
+    res.status(500).json({ 
+      error: "Không thể tạo payment intent", 
+      details: error.message 
+    });
+  }
+});
+
+// Webhook để xử lý các sự kiện từ Stripe
+app.post("/stripe-webhook", express.raw({type: 'application/json'}), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
+  } catch (err) {
+    console.error(`Lỗi webhook: ${err.message}`);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  // Xử lý các sự kiện thanh toán
+  if (event.type === 'payment_intent.succeeded') {
+    const paymentIntent = event.data.object;
+    
+    // Lấy thông tin từ metadata
+    const { eventId, userId, amountVND } = paymentIntent.metadata;
+    
+    try {
+      // Tạo vé sau khi thanh toán thành công
+      // (Code này phụ thuộc vào logic tạo vé hiện tại của bạn)
+      
+      console.log(`Thanh toán thành công cho sự kiện ${eventId}, người dùng ${userId}, số tiền ${amountVND} VND`);
+      
+      // Ở đây, bạn có thể gọi hàm tạo vé và gửi thông báo
+    } catch (error) {
+      console.error("Lỗi khi xử lý thanh toán thành công:", error);
+    }
+  }
+
+  res.json({received: true});
+});
+
+// Endpoint xác nhận thanh toán và tạo vé
+app.post("/confirm-payment", authenticateFirebaseToken, async (req, res) => {
+  try {
+    const { paymentIntentId, ticketDetails } = req.body;
+    
+    console.log("Xác nhận thanh toán cho paymentIntent:", paymentIntentId);
+    console.log("Chi tiết vé:", JSON.stringify(ticketDetails, null, 2));
+    
+    // Xác minh trạng thái thanh toán
+    const isSuccess = await stripeService.confirmPaymentSuccess(paymentIntentId);
+    
+    if (!isSuccess) {
+      return res.status(400).json({ error: "Thanh toán chưa hoàn tất" });
+    }
+    
+    // Tạo vé mới
+    const ticketId = uuidv4();
+    const newTicket = new Ticket({
+      ...ticketDetails,
+      ticketId,
+      checkedIn: false,
+    });
+    
+    await newTicket.save();
+    
+    // Gửi SMS xác nhận (nếu cần)
+    try {
+      const phoneNumber = ticketDetails.ticketDetails.contactNo.startsWith('+') 
+        ? ticketDetails.ticketDetails.contactNo 
+        : `+84${ticketDetails.ticketDetails.contactNo.replace(/^0/, '')}`;
+      
+      await sendSMS(
+        phoneNumber,
+        `Cảm ơn bạn đã mua vé cho sự kiện "${ticketDetails.ticketDetails.eventname}". Mã vé của bạn là: ${ticketId}`
+      );
+    } catch (smsError) {
+      console.error("Lỗi khi gửi SMS xác nhận vé:", smsError);
+      // Không làm gián đoạn quy trình, chỉ ghi nhật ký lỗi
+    }
+    
+    res.json({ 
+      success: true, 
+      message: "Thanh toán thành công và vé đã được tạo", 
+      ticket: newTicket 
+    });
+  } catch (error) {
+    console.error("Lỗi chi tiết khi xác nhận thanh toán:", error);
+    res.status(500).json({ 
+      error: "Không thể xác nhận thanh toán", 
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+// Thêm route này để test kết nối Stripe
+app.get('/test-stripe-connection', async (req, res) => {
+  try {
+    const testIntent = await stripeService.createPaymentIntent(10000, {
+      test: true
+    });
+    
+    res.json({
+      success: true,
+      testIntent: {
+        id: testIntent.id,
+        hasClientSecret: !!testIntent.clientSecret,
+        // Chỉ hiển thị vài ký tự đầu và cuối để bảo mật
+        clientSecretPreview: testIntent.clientSecret ? 
+          `${testIntent.clientSecret.substring(0, 10)}...${testIntent.clientSecret.substring(testIntent.clientSecret.length - 10)}` : 
+          null
+      }
+    });
+  } catch (error) {
+    console.error("Lỗi khi test Stripe:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
