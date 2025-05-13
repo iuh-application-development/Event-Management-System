@@ -24,7 +24,8 @@ import CreatEvent from './pages/CreateEvent'
 import AdminPage from './pages/AdminPage';
 import Verification from './pages/Verification';
 
-axios.defaults.baseURL = 'http://localhost:4000/';
+// Sử dụng API URL tương đối khi trong Docker hoặc URL tuyệt đối khi phát triển
+axios.defaults.baseURL = '/api/';
 axios.defaults.withCredentials=true;
 
 function App() {

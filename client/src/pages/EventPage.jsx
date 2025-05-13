@@ -86,10 +86,9 @@ export default function EventPage() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
       {/* Hiển thị thông tin sự kiện */}
-      <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-        {event.image && (
+      <div className="bg-white rounded-lg shadow-lg overflow-hidden">        {event.image && (
           <img 
-            src={`/uploads/${event.image}`} 
+            src={`/api/uploads/${event.image}`} 
             alt={event.title} 
             className="w-full h-64 object-cover object-center"
           />
