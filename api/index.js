@@ -23,7 +23,7 @@ app.use(cookieParser());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(cors({
    credentials: true,
-   origin: ['http://localhost:5173', 'http://localhost', 'http://localhost:80']
+   origin: 'http://localhost:5173'
 }));
 
 // Tạo thư mục uploads nếu chưa tồn tại

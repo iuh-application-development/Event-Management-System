@@ -62,9 +62,10 @@ export default function IndexPage() {
           return (
             <div className="bg-white rounded-xl relative" key={event._id}>
               {/* Chỉnh sửa phần hiển thị hình ảnh */}
-              <div className='rounded-tl-[0.75rem] rounded-tr-[0.75rem] rounded-br-[0] rounded-bl-[0] object-fill aspect-16:9 relative'>                {event.image ? (
+              <div className='rounded-tl-[0.75rem] rounded-tr-[0.75rem] rounded-br-[0] rounded-bl-[0] object-fill aspect-16:9 relative'>
+                {event.image ? (
                   <img
-                    src={`/api/uploads/${event.image}`}
+                    src={`http://localhost:4000/uploads/${event.image.replace('/uploads/', '')}`} 
                     alt={event.title}
                     width="300" 
                     height="200" 
