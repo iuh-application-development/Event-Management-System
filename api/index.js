@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
+const session = require('express-session');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -29,6 +30,17 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(cors({
    credentials: true,
    origin: [process.env.FRONTEND_URL || 'http://localhost:5173', 'http://localhost', 'http://localhost:80']
+}));
+
+// Configure express-session
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'event-management-secret-key',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+    maxAge: 30 * 60 * 1000 // Session timeout: 30 minutes
+  }
 }));
 
 // Tạo thư mục uploads nếu chưa tồn tại
@@ -833,7 +845,21 @@ app.post("/create-payment-intent", authenticateFirebaseToken, async (req, res) =
       });
     }
     
+    // Check if amount is valid
+    if (isNaN(amount) || amount < 0) {
+      return res.status(400).json({ 
+        error: "Số tiền không hợp lệ", 
+        details: "Số tiền phải là số dương" 
+      });
+    }
+    
     console.log("Tạo payment intent với số tiền:", amount);
+    
+    // Check for existing payment intent in session to avoid duplicates
+    if (req.session && req.session.currentPaymentIntentId) {
+      console.log("Đã có payment intent trong session:", req.session.currentPaymentIntentId);
+      // Could retrieve and return existing intent here
+    }
     
     const paymentIntent = await stripeService.createPaymentIntent(amount, {
       eventId,
@@ -851,6 +877,11 @@ app.post("/create-payment-intent", authenticateFirebaseToken, async (req, res) =
     
     if (!paymentIntent.clientSecret) {
       throw new Error("Client secret không được tạo đúng cách");
+    }
+    
+    // Store in session if available
+    if (req.session) {
+      req.session.currentPaymentIntentId = paymentIntent.id;
     }
     
     res.json(paymentIntent);
@@ -916,13 +947,33 @@ app.post("/confirm-payment", authenticateFirebaseToken, async (req, res) => {
       return res.status(400).json({ error: "Thanh toán chưa hoàn tất" });
     }
     
-    // Tạo vé mới
+    // Tạo mã vé duy nhất
     const ticketId = uuidv4();
-    const newTicket = new Ticket({
+    
+    // Tạo dữ liệu QR Code
+    const qrData = JSON.stringify({
+      ticketId: ticketId,
+      eventId: ticketDetails.eventId,
+      userName: ticketDetails.ticketDetails.name,
+      eventName: ticketDetails.ticketDetails.eventname
+    });
+    
+    // Tạo QR code
+    const QRCode = require('qrcode');
+    const qrCodeDataURL = await QRCode.toDataURL(qrData);
+    
+    // Cập nhật dữ liệu vé với QR code đã được tạo
+    const ticketWithQR = {
       ...ticketDetails,
       ticketId,
       checkedIn: false,
-    });
+    };
+    
+    // Thêm QR code vào ticket details
+    ticketWithQR.ticketDetails.qr = qrCodeDataURL;
+    
+    // Tạo vé mới với QR code
+    const newTicket = new Ticket(ticketWithQR);
     
     await newTicket.save();
     

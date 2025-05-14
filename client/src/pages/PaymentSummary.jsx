@@ -385,9 +385,8 @@ export default function PaymentSummary() {
             ) : (
               <>
                 <h2 className="text-xl font-semibold mb-4">Payment Information</h2>
-                
-                {!paymentCompleted && (
-                  <Elements stripe={stripePromise}>
+                  {!paymentCompleted && verificationStep === 'complete' && (
+                  <Elements stripe={stripePromise} key="payment-form">
                     <StripePaymentForm 
                       amount={event.ticketPrice}
                       eventId={event._id}

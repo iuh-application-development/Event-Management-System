@@ -20,9 +20,6 @@ const CARD_ELEMENT_OPTIONS = {
   }
 };
 
-// Chỉ dùng cho mục đích test, xóa đi sau khi xác định lỗi
-const TEST_CLIENT_SECRET = "pi_3PRLmmePwKhP5Ycw1zjbp3JQ_secret_8VDafKhxO5JQVf4RaW16yCrXx";
-
 export default function StripePaymentForm({ amount, eventId, eventName, onSuccess, ticketDetails }) {
   const [processing, setProcessing] = useState(false);
   const [clientSecret, setClientSecret] = useState('');
@@ -31,7 +28,6 @@ export default function StripePaymentForm({ amount, eventId, eventName, onSucces
   
   const stripe = useStripe();
   const elements = useElements();
-
   useEffect(() => {
     // Tạo Payment Intent khi component mount
     const createPaymentIntent = async () => {
@@ -58,17 +54,10 @@ export default function StripePaymentForm({ amount, eventId, eventName, onSucces
         setError('Không thể khởi tạo thanh toán. Vui lòng thử lại sau.');
       }
     };
-    
-    if (amount && eventId) {
+      if (amount && eventId && !clientSecret) {
       createPaymentIntent();
     }
-
-    if (!clientSecret && TEST_CLIENT_SECRET) {
-      console.log("Sử dụng client secret thử nghiệm");
-      setClientSecret(TEST_CLIENT_SECRET);
-    }
-  }, [amount, eventId, ticketDetails, clientSecret]);
-
+  }, [amount, eventId, ticketDetails]);
   const handleSubmit = async (event) => {
     event.preventDefault();
     
@@ -87,12 +76,18 @@ export default function StripePaymentForm({ amount, eventId, eventName, onSucces
     setProcessing(true);
     
     try {
-      console.log("Xác nhận thanh toán với client secret:", clientSecret);
+      console.log("Xác nhận thanh toán với client secret");
+      
+      // Lấy phần tử thẻ
+      const cardElement = elements.getElement(CardElement);
+      if (!cardElement) {
+        throw new Error("Không thể tìm thấy thông tin thẻ. Vui lòng thử lại.");
+      }
       
       // Xác thực card payment
       const result = await stripe.confirmCardPayment(clientSecret, {
         payment_method: {
-          card: elements.getElement(CardElement),
+          card: cardElement,
           billing_details: {
             name: ticketDetails.ticketDetails.name,
             email: ticketDetails.ticketDetails.email,
@@ -105,11 +100,11 @@ export default function StripePaymentForm({ amount, eventId, eventName, onSucces
       if (result.error) {
         // Hiển thị lỗi chi tiết
         throw new Error(result.error.message);
-      } else {
-        if (result.paymentIntent.status === 'succeeded') {
-          // Tiếp tục xử lý như cũ
-          console.log('Payment succeeded:', result.paymentIntent);
-          
+      } else if (result.paymentIntent && result.paymentIntent.status === 'succeeded') {
+        // Thanh toán thành công
+        console.log('Payment succeeded:', result.paymentIntent);
+        
+        try {
           // Gọi API để xác nhận và tạo vé
           const confirmResponse = await axios.post('/confirm-payment', {
             paymentIntentId,
@@ -121,10 +116,15 @@ export default function StripePaymentForm({ amount, eventId, eventName, onSucces
             onSuccess(confirmResponse.data);
           } else {
             setError('Thanh toán thành công nhưng không thể tạo vé. Vui lòng liên hệ hỗ trợ.');
+            setProcessing(false);
           }
-        } else {
-          throw new Error(`Trạng thái payment intent không thành công: ${result.paymentIntent.status}`);
+        } catch (confirmError) {
+          console.error('Lỗi khi xác nh��n thanh toán với server:', confirmError);
+          setError('Thanh toán thành công nhưng không thể tạo vé. Vui lòng liên hệ hỗ trợ với mã: ' + paymentIntentId);
+          setProcessing(false);
         }
+      } else {
+        throw new Error(`Trạng thái thanh toán không thành công: ${result.paymentIntent ? result.paymentIntent.status : 'unknown'}`);
       }
     } catch (err) {
       console.error('Chi tiết lỗi khi xử lý thanh toán:', err);

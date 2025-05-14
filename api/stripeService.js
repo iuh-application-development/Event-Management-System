@@ -13,6 +13,11 @@ if (!process.env.STRIPE_SECRET_KEY) {
  * @param {Object} metadata - Thông tin metadata cho payment intent
  */
 const createPaymentIntent = async (amount, metadata = {}) => {
+  // Validate input
+  if (!amount || isNaN(amount) || amount <= 0) {
+    throw new Error(`Số tiền không hợp lệ: ${amount}`);
+  }
+
   // Chuyển đổi VNĐ sang USD với tỷ giá xấp xỉ (Stripe không hỗ trợ VND trực tiếp)
   // 1 USD ~ 24,000 VND (tỷ giá có thể thay đổi, cần cập nhật)
   const amountInUSD = Math.round(amount / 24000 * 100) / 100;
@@ -20,7 +25,15 @@ const createPaymentIntent = async (amount, metadata = {}) => {
   // Chuyển đổi sang cents (đơn vị Stripe sử dụng)
   const amountInCents = Math.round(amountInUSD * 100);
 
+  // Double check amount is valid
+  if (amountInCents <= 0) {
+    throw new Error(`Số tiền chuyển đổi không hợp lệ: ${amountInCents} cents`);
+  }
+
   try {
+    // Add idempotency key to prevent duplicate charges
+    const idempotencyKey = metadata.idempotencyKey || `payment_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+    
     const paymentIntent = await stripe.paymentIntents.create({
       amount: amountInCents,
       currency: 'usd',
@@ -29,7 +42,13 @@ const createPaymentIntent = async (amount, metadata = {}) => {
         amountVND: amount
       },
       payment_method_types: ['card'],
+    }, {
+      idempotencyKey: idempotencyKey
     });
+
+    if (!paymentIntent || !paymentIntent.client_secret) {
+      throw new Error('Không nhận được client secret từ Stripe');
+    }
 
     return {
       clientSecret: paymentIntent.client_secret,
