@@ -18,12 +18,14 @@ const router = createBrowserRouter([
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    {/* Nếu đang sử dụng BrowserRouter */}
+    {/* Chỉ sử dụng một phương pháp định tuyến - ở đây chúng ta dùng RouterProvider */}
+    <RouterProvider router={router} />
+    
+    {/* 
+    Nếu muốn sử dụng BrowserRouter thay thế, hãy comment dòng trên và bỏ comment đoạn dưới:
     <BrowserRouter future={{ v7_relativeSplatPath: true }}>
       <App />
     </BrowserRouter>
-    
-    {/* Hoặc nếu đang dùng RouterProvider */}
-    {/* <RouterProvider router={router} /> */}
+    */}
   </React.StrictMode>
 )

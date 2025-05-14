@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  # MongoDB service
+  mongodb:
+    image: mongo:latest # Changed from mongo:6
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+    networks:
+      - app-network
+  # API service
+  api:
+    build: ./api
+    container_name: event-api
+    restart: unless-stopped
+    env_file:
+      - ./api/.env
+    ports:
+      - "4000:4000"
+    depends_on:
+      - mongodb
+    volumes:
+      - ./api/uploads:/app/uploads  # Persistent storage for file uploads
+    networks:
+      - app-network
+
+  # Client service
+  client:
+    build: ./client
+    container_name: event-client
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  mongo_data:
+    driver: local

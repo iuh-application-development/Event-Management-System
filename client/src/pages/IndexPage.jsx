@@ -7,12 +7,11 @@ import { BiLike } from "react-icons/bi";
 
 export default function IndexPage() {
   const [events, setEvents] = useState([]);
-
   //! Fetch events from the server ---------------------------------------------------------------
   useEffect(() => {
     
     axios
-      .get("/events") 
+      .get("/public/events") 
       .then((response) => {
         setEvents(response.data);
       })
@@ -43,10 +42,9 @@ export default function IndexPage() {
 
   return (
     <>
-    <div className="mt-1 flex flex-col">
-      <div className="hidden sm:block" >
+    <div className="mt-1 flex flex-col">      <div className="hidden sm:block" >
         <div href="#" className="flex item-center inset-0">
-          <img src="../src/assets/hero.jpg" alt="" className='w-full'/> 
+          <img src="/src/assets/hero.jpg" alt="" className='w-full'/> 
         </div>
       </div>
 
@@ -62,10 +60,9 @@ export default function IndexPage() {
           return (
             <div className="bg-white rounded-xl relative" key={event._id}>
               {/* Chỉnh sửa phần hiển thị hình ảnh */}
-              <div className='rounded-tl-[0.75rem] rounded-tr-[0.75rem] rounded-br-[0] rounded-bl-[0] object-fill aspect-16:9 relative'>
-                {event.image ? (
+              <div className='rounded-tl-[0.75rem] rounded-tr-[0.75rem] rounded-br-[0] rounded-bl-[0] object-fill aspect-16:9 relative'>                {event.image ? (
                   <img
-                    src={`http://localhost:4000/uploads/${event.image.replace('/uploads/', '')}`} 
+                    src={`/api/uploads/${event.image.replace('/uploads/', '')}`} 
                     alt={event.title}
                     width="300" 
                     height="200" 

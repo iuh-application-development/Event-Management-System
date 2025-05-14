@@ -12,6 +12,11 @@ const { v4: uuidv4 } = require('uuid');
 const { sendSMS } = require('./twilio'); // Added Twilio import
 const stripeService = require('./stripeService'); // Added Stripe service import
 
+// Import models
+const Event = require('./models/Event');  
+const UserModel = require('./models/User');
+const Ticket = require('./models/Ticket');
+
 require('dotenv').config();
 const app = express();
 // Log để kiểm tra biến môi trường
@@ -23,7 +28,7 @@ app.use(cookieParser());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(cors({
    credentials: true,
-   origin: 'http://localhost:5173'
+   origin: [process.env.FRONTEND_URL || 'http://localhost:5173', 'http://localhost', 'http://localhost:80']
 }));
 
 // Tạo thư mục uploads nếu chưa tồn tại
@@ -53,15 +58,7 @@ mongoose.connect(mongoUrl, {
 });
 
 // Models
-const UserSchema = new mongoose.Schema({
-   uid: String, // Firebase User ID
-   name: String,
-   email: { type: String, unique: true },
-   password: String,
-   role: { type: String, enum: ['admin', 'organizer', 'participant'], default: 'participant' }
-});
-
-const UserModel = mongoose.model("User", UserSchema);
+// UserModel is already imported from './models/User'
 
 // Tạo tài khoản admin mặc định
 const createDefaultAdmin = async () => {
@@ -233,35 +230,7 @@ const authenticateFirebaseToken = async (req, res, next) => {
    }
 };
 
-const ticketSchema = new mongoose.Schema({
-   ticketId: { type: String, default: () => uuidv4() },
-   userid: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-   eventId: { type: mongoose.Schema.Types.ObjectId, ref: 'Event' },
-   ticketDetails: Object,
-   checkedIn: { type: Boolean, default: false },
-   checkedInTime: Date
-});
-
-const Ticket = mongoose.model("Ticket", ticketSchema);
-
-const eventSchema = new mongoose.Schema({
-   title: String,
-   organizedBy: String,
-   owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-   eventDate: Date,
-   eventTime: String,
-   location: String,
-   eventType: String,
-   description: String,
-   ticketPrice: Number,
-   Quantity: Number,
-   image: String,
-   likes: Number,
-   Comment: [String],
-   isApproved: { type: Boolean, default: false } // Thêm trường mới
-});
-
-const Event = mongoose.model("Event", eventSchema);
+// Ticket and Event models are now imported from their respective files
 
 // Middleware kiểm tra quyền sở hữu sự kiện
 const isEventOwner = async (req, res, next) => {
@@ -304,6 +273,19 @@ app.get("/", (req, res) => {
       status: 'API đang hoạt động',
       message: 'Chào mừng đến với API của Hệ thống Quản lý Sự kiện!'
    });
+});
+
+// API công khai để lấy danh sách tất cả sự kiện đã được phê duyệt
+app.get("/public/events", async (req, res) => {
+   try {
+      const events = await Event.find({ isApproved: true })
+         .sort({ createdAt: -1 });
+      
+      res.json(events);
+   } catch (error) {
+      console.error("Lỗi khi lấy danh sách sự kiện:", error);
+      res.status(500).json({ error: "Không thể lấy danh sách sự kiện" });
+   }
 });
 
 app.post("/register", async (req, res) => {
@@ -402,16 +384,6 @@ app.get("/event/:id/ordersummary/paymentsummary", async (req, res) => {
    } catch (error) {
       console.error("Lỗi khi lấy thông tin sự kiện:", error);
       res.status(500).json({ error: "Không thể lấy thông tin sự kiện từ cơ sở dữ liệu" });
-   }
-});
-
-app.get("/event/:id/ordersummary/paymentsummary", async (req, res) => {
-   const { id } = req.params;
-   try {
-      const event = await Event.findById(id);
-      res.json(event);
-   } catch (error) {
-      res.status(500).json({ error: "Failed to fetch event from MongoDB" });
    }
 });
 
@@ -627,9 +599,32 @@ app.get("/event/:id", async (req, res) => {
      res.json(event);
    } catch (error) {
      console.error("Lỗi khi lấy thông tin sự kiện:", error);
-     res.status(500).json({ error: "Không thể lấy thông tin sự kiện", details: error.message });
+     res.status(500).json({ error: "Lỗi server khi lấy thông tin sự kiện" });
    }
- });
+});
+
+// API endpoint cho order summary
+app.get("/event/:id/ordersummary", async (req, res) => {
+   try {
+     const { id } = req.params;
+     
+     // Kiểm tra định dạng ID hợp lệ
+     if (!mongoose.Types.ObjectId.isValid(id)) {
+       return res.status(400).json({ error: "ID sự kiện không hợp lệ" });
+     }
+     
+     const event = await Event.findById(id);
+     
+     if (!event) {
+       return res.status(404).json({ error: "Không tìm thấy sự kiện" });
+     }
+     
+     res.json(event);
+   } catch (error) {
+     console.error("Lỗi khi lấy thông tin order summary:", error);
+     res.status(500).json({ error: "Lỗi server khi lấy thông tin order summary" });
+   }
+});
 // Route lấy danh sách vé của người dùng
 app.get("/tickets/user/:userId", async (req, res) => {
    try {
