@@ -1,117 +1,104 @@
-graph TD
-
-    subgraph "User Devices"
-        Browser["Web Browser (Client)"]
-    end
-
-    subgraph "Frontend (React Application)"
-        ReactApp["React Application"]
-        subgraph "React App Components"
-            AuthComponents["Authentication Components"]
-            EventComponents["Event Management Components"]
-            PaymentComponents["Payment Components"]
-            QRScanner["QR Code Scanner Component"]
-            AdminDashboard["Admin Dashboard"]
-        end
-        ReactLibraries["Libraries (Axios, React Router, Tailwind CSS)"]
-    end
-
-    subgraph "Backend (Node.js/Express.js)"
-        ExpressServer["Express.js Server"]
-        subgraph "API Endpoints"
-            AuthAPI["Authentication API"]
-            EventAPI["Event Management API"]
-            PaymentAPI["Payment Processing API"]
-            TicketAPI["Ticket Management API"]
-            UserAPI["User Management API"]
-            VerificationAPI["Verification API"]
-        end
-        subgraph "Middleware"
-            AuthMiddleware["Authentication Middleware"]
-            RoleMiddleware["Role Authorization"]
-            FileUploadMiddleware["File Upload (Multer)"]
-        end
-        UploadsFolder["Uploads Folder (Images)"]
-    end
-
-    subgraph "Database"
-        MongoDB["MongoDB Atlas"]
-        subgraph "Collections"
-            UsersCollection["Users Collection"]
-            EventsCollection["Events Collection"]
-            TicketsCollection["Tickets Collection"]
-        end
-    end
-
-    subgraph "Third-Party Services"
-        FirebaseAuth["Firebase Authentication"]
-        StripePayment["Stripe Payment Gateway"]
-        TwilioSMS["Twilio SMS Service"]
-    end
-
-    subgraph "Deployment Infrastructure"
-        Docker["Docker Containers"]
-        DockerCompose["Docker Compose"]
-    end
-
-    %% Kết nối
-    Browser -->|HTTP/HTTPS| ReactApp
-    ReactApp --> ReactLibraries
-    ReactApp --> AuthComponents
-    ReactApp --> EventComponents
-    ReactApp --> PaymentComponents
-    ReactApp --> QRScanner
-    ReactApp --> AdminDashboard
-    ReactApp -->|REST API| ExpressServer
-    AuthComponents -->|Auth Requests| AuthAPI
-    EventComponents -->|Event CRUD| EventAPI
-    PaymentComponents -->|Payment Processing| PaymentAPI
-    QRScanner -->|Ticket Verification| VerificationAPI
-    AdminDashboard -->|User/Event Management| UserAPI
-    AdminDashboard -->|Event Approval| EventAPI
-    ExpressServer --> AuthAPI
-    ExpressServer --> EventAPI
-    ExpressServer --> PaymentAPI
-    ExpressServer --> TicketAPI
-    ExpressServer --> UserAPI
-    ExpressServer --> VerificationAPI
-    ExpressServer --> AuthMiddleware
-    ExpressServer --> RoleMiddleware
-    ExpressServer --> FileUploadMiddleware
-    ExpressServer --> UploadsFolder
-    AuthAPI --> MongoDB
-    EventAPI --> MongoDB
-    PaymentAPI --> MongoDB
-    TicketAPI --> MongoDB
-    UserAPI --> MongoDB
-    VerificationAPI --> MongoDB
-    MongoDB --> UsersCollection
-    MongoDB --> EventsCollection
-    MongoDB --> TicketsCollection
-    AuthAPI <-->|Verify Token| FirebaseAuth
-    PaymentAPI <-->|Process Payments| StripePayment
-    TicketAPI -->|Send SMS Notifications| TwilioSMS
-    AuthComponents <-->|Login/Register| FirebaseAuth
-    PaymentComponents <-->|Payment Elements| StripePayment
-    Docker --> ExpressServer
-    Docker --> ReactApp
-    DockerCompose --> Docker
-
-    %% Style
+---
+config:
+  layout: dagre
+---
+flowchart LR
+ subgraph UserDevices["User Devices"]
+        Browser("Web Browser (Client)")
+  end
+ subgraph Components["App Components"]
+    direction LR
+        AuthComponents("Authentication")
+        EventComponents("Event Management")
+        PaymentComponents("Payment")
+        QRScanner("QR Code Scanner")
+        AdminDashboard("Admin Dashboard")
+  end
+ subgraph Frontend["Frontend: React Application"]
+    direction TB
+        ReactApp("React Application")
+        Components
+        ReactLibraries("Axios, React Router, Tailwind")
+  end
+ subgraph API_Endpoints["API Endpoints"]
+    direction LR
+        AuthAPI("Authentication API")
+        EventAPI("Event API")
+        PaymentAPI("Payment API")
+        TicketAPI("Ticket API")
+        UserAPI("User API")
+        VerificationAPI("Verification API")
+  end
+ subgraph Middleware["Middleware"]
+    direction LR
+        AuthMiddleware("Auth Middleware")
+        RoleMiddleware("Role Middleware")
+        FileUploadMiddleware("File Upload (Multer)")
+  end
+ subgraph Backend["Backend: Node.js/Express.js"]
+    direction TB
+        ExpressServer("Express Server")
+        API_Endpoints
+        Middleware
+        UploadsFolder("Uploads (Images)")
+  end
+ subgraph Collections["Collections"]
+        UsersCollection("Users")
+        EventsCollection("Events")
+        TicketsCollection("Tickets")
+  end
+ subgraph Database["Database"]
+    direction TB
+        MongoDB("MongoDB Atlas")
+        Collections
+  end
+ subgraph ThirdParty["Third-Party Services"]
+        FirebaseAuth("Firebase Auth")
+        StripePayment("Stripe")
+        TwilioSMS("Twilio SMS")
+  end
+ subgraph Infrastructure["Infrastructure"]
+    direction LR
+        Docker("Docker Containers")
+        DockerCompose("Docker Compose")
+  end
+    Browser -- HTTPS ---> ReactApp
+    ReactApp ---> ReactLibraries & Components
+    ReactApp -- REST ---> ExpressServer
+    Components -. REST Calls .-> API_Endpoints
+    ExpressServer ---> API_Endpoints & Middleware & UploadsFolder
+    API_Endpoints -.-> MongoDB
+    MongoDB --o Collections
+    AuthAPI <--> FirebaseAuth
+    PaymentAPI <--> StripePayment
+    TicketAPI -- Notify --> TwilioSMS
+    Docker ----> ReactApp & ExpressServer
+    DockerCompose ----> Docker
+     Browser:::primary
+     AuthComponents:::secondary
+     EventComponents:::secondary
+     PaymentComponents:::secondary
+     QRScanner:::secondary
+     AdminDashboard:::secondary
+     ReactApp:::primary
+     ReactLibraries:::tertiary
+     AuthMiddleware:::tertiary
+     RoleMiddleware:::tertiary
+     FileUploadMiddleware:::tertiary
+     ExpressServer:::primary
+     UploadsFolder:::tertiary
+     UsersCollection:::database
+     EventsCollection:::database
+     TicketsCollection:::database
+     MongoDB:::database
+     FirebaseAuth:::thirdparty
+     StripePayment:::thirdparty
+     TwilioSMS:::thirdparty
+     Docker:::infrastructure
+     DockerCompose:::infrastructure
     classDef primary fill:#f9f,stroke:#333,stroke-width:2px
     classDef secondary fill:#bbf,stroke:#333,stroke-width:1px
     classDef tertiary fill:#ddf,stroke:#333,stroke-width:1px
     classDef database fill:#bfb,stroke:#333,stroke-width:2px
     classDef thirdparty fill:#fbb,stroke:#333,stroke-width:2px
     classDef infrastructure fill:#ffd,stroke:#333,stroke-width:2px
-
-    class Browser,ReactApp primary
-    class AuthComponents,EventComponents,PaymentComponents,QRScanner,AdminDashboard secondary
-    class ReactLibraries tertiary
-    class ExpressServer primary
-    class AuthAPI,EventAPI,PaymentAPI,TicketAPI,UserAPI,VerificationAPI secondary
-    class AuthMiddleware,RoleMiddleware,FileUploadMiddleware tertiary
-    class UploadsFolder tertiary
-    class MongoDB,UsersCollection,EventsCollection,TicketsCollection database
-    class FirebaseAuth,StripePayment,TwilioSMS thirdparty
-    class Docker,DockerCompose infrastructure
