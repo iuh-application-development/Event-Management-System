@@ -2,39 +2,30 @@
 const mongoose = require('mongoose');
 
 const eventSchema = new mongoose.Schema({
-  title: {
-    type: String,
+  // Tên sự kiện
+  title: { type: String, required: true },
+  // Mô tả sự kiện
+  description: { type: String, required: true },
+  // Ngày diễn ra
+  eventDate: { type: Date, required: true },
+  // Thời gian
+  eventTime: { type: String, required: true },
+  // Địa điểm
+  location: { type: String, required: true },
+  // Giá vé
+  ticketPrice: { type: Number, required: true },
+
+  organizer: {
+    type: mongoose.Schema.Types.ObjectId,  // ID tham chiếu đến User
+    ref: 'User',                           // Liên kết với collection User
     required: true
   },
-  description: {
-    type: String,
-    required: true
-  },
-  eventDate: {
-    type: Date, 
-    required: true
-  },
-  eventTime: {
-    type: String,
-    required: true
-  },
-  location: {
-    type: String,
-    required: true
-  },
-  ticketPrice: {
-    type: Number,
-    required: true
-  },  organizer: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  // Adding owner as an alias for organizer for legacy code compatibility
+  
   owner: {
-    type: mongoose.Schema.Types.ObjectId,
+    type: mongoose.Schema.Types.ObjectId, // ID tham chiếu đến User
     ref: 'User'
   },
+  // Trạng thái phê duyệt
   isApproved: {
     type: Boolean,
     default: false
@@ -45,18 +36,16 @@ const eventSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Pre-save hook to sync owner and organizer fields
+// Móc lưu trước để đồng bộ hóa các trường chủ sở hữu và người tổ chức
 eventSchema.pre('save', function(next) {
-  // If owner is set but organizer is not, copy owner to organizer
   if (this.owner && !this.organizer) {
-    this.organizer = this.owner;
+    this.organizer = this.owner;   // Nếu có owner mà không có organizer
   }
-  // If organizer is set but owner is not, copy organizer to owner
   else if (this.organizer && !this.owner) {
-    this.owner = this.organizer;
+    this.owner = this.organizer;   // Nếu có organizer mà không có owner
   }
   next();
 });
-
+// Tạo model từ schema
 const Event = mongoose.model('Event', eventSchema);
 module.exports = Event;

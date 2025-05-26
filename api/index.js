@@ -49,7 +49,7 @@ if (!fs.existsSync(uploadsPath)) {
    fs.mkdirSync(uploadsPath, { recursive: true });
 }
 
-// MongoDB connection with improved options
+// Kết nối MongoDB
 const mongoUrl = process.env.MONGO_URL || 'mongodb://localhost:27017/event-management';
 mongoose.connect(mongoUrl, {
    useNewUrlParser: true,
@@ -141,7 +141,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-// Middleware để kiểm tra đăng nhập - Di chuyển lên trên để định nghĩa trước khi sử dụng
+// Middleware để kiểm tra đăng nhập 
 const authenticateUser = (req, res, next) => {
    const { token } = req.cookies;
    if (!token) {
@@ -207,8 +207,8 @@ const isOrganizerOrAdmin = (req, res, next) => {
 // Middleware xác thực Firebase token
 const authenticateFirebaseToken = async (req, res, next) => {
    // Kiểm tra header Authorization
-   const authHeader = req.headers.authorization;
-   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+   const authHeader = req.headers.authorization; // Lấy token từ header Authorization
+   if (!authHeader || !authHeader.startsWith('Bearer ')) { // Kiểm tra xem có token không
      return res.status(401).json({ error: 'Chưa đăng nhập' });
    }
    
@@ -333,10 +333,12 @@ app.post('/createEvent', authenticateFirebaseToken, isOrganizerOrAdmin, upload.s
       // Kiểm tra sự kiện có được tự động phê duyệt không (admin tạo = tự động phê duyệt)
       const isApproved = req.user.role === 'admin';
       
+      // Kiểm tra dữ liệu bắt buộc
       const newEvent = await Event.create({
          title,
          organizedBy,
-         owner: req.user._id, // Lưu người tạo sự kiện
+         owner: req.user._id, 
+         organizer: req.user._id,
          eventDate,
          eventTime,
          location,
