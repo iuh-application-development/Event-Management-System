@@ -9,6 +9,10 @@ Giới thiệu hệ thống quản lý sự kiện của chúng tôi, một gi�
 - Nguyễn Văn Tùng - 22647011
 - Lê Nhật Trường - 22716321
 
+## 🎥 Video Demo
+
+https://drive.google.com/drive/folders/16GO2YQDdHmfMhj7GvNchhMP924jJBaLf?usp=sharing
+
 ## Features
 
 - Lên lịch sự kiện
@@ -22,6 +26,25 @@ Giới thiệu hệ thống quản lý sự kiện của chúng tôi, một gi�
 - Quản lý người dùng với hệ thống phân quyền
 - Đăng nhập/Đăng ký với Firebase Authentication
 - Quét mã QR để xác thực vé tại sự kiện
+
+**Thiết kế giao diện:**
+- Trang chủ: hiển thị danh sách sự kiện, thanh tìm kiếm
+![Trang chủ EventoEMS](./screenshots/homepage.png)
+
+- Trang chi tiết sự kiện: thông tin đầy đủ, nút đăng ký
+![Chi tiết sự kiện](./screenshots/event-details.png)
+
+- Trang thanh toán: form thông tin, Stripe Elements
+![Trang thanh toán](./screenshots/payment-page.png)
+
+- Dashboard admin: bảng quản lý người dùng và sự kiện
+![Dashboard Admin](./screenshots/admin-dashboard.png)
+
+- Trang quét QR: camera scanner, hiển thị kết quả
+![Quét mã QR](./screenshots/qr-scanner.png)
+
+- Trang đăng nhập/đăng ký: Login form với email/password, Google OAuth\
+![Đăng nhập](./screenshots/login-page.png)
 
 ## Yêu Cầu
 

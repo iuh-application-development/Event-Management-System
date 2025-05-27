@@ -2,10 +2,28 @@
 
 ## 1. THÔNG TIN NHÓM
 
-- Trần Quang Triều - 22002955 - quangtrieutqt1111@gmail.com (Kiến trúc sư, UI/UX Designer)
-- Phan Nhật Trường - 22721621 - phannhattris@gmail.com (Backend Developer)
-- Nguyễn Văn Tùng - 22647011 - tungproduct@gmail.com (Frontend Developer)
-- Lê Nhật Trường - 22716321 - nhattruong22102004@gmail.com (DevOps Engineer)
+- Trần Quang Triều - 22002955 - quangtrieutqt1111@gmail.com 
+- Phan Nhật Trường - 22721621 - phannhattris@gmail.com 
+- Nguyễn Văn Tùng - 22647011 - tungproduct@gmail.com 
+- Lê Nhật Trường - 22716321 - nhattruong22102004@gmail.com 
+
+### Phân công công việc
+
+**Phan Nhật Trường**
+- Phát triển tính năng tạo sự kiện
+- Docker hóa ứng dụng
+
+**Trần Quang Triều**
+- Xây dựng giao diện trang chủ, xem sự kiện sắp tới
+- Tích hợp thanh toán online với Stripe khi đặt vé
+
+**Nguyễn Văn Tùng**
+- Xử lý đặt vé sự kiện
+- Tích hợp xác thực SMS với Twilio
+
+**Lê Nhật Trường**
+- Xây dựng trang quản trị (admin) để quản lý người dùng/sự kiện
+- Tích hợp Firebase Authentication (Email/Password + Google) cho đăng nhập/đăng ký
 
 
 ## 2. MÔ TẢ ĐỀ TÀI
@@ -22,7 +40,7 @@ EventoEMS (Event Management System) là một hệ thống quản lý sự kiệ
 
 **Lý do chọn đề tài:**
 - Ứng dụng thực tế cao 
-- Tích hợp nhiều công nghệ hiện đại (MERN stack, Docker, Cloud services)
+- Tích hợp nhiều công nghệ hiện đại 
 - Cơ hội học hỏi về phát triển full-stack và DevOps
 - Đáp ứng nhu cầu thực tế 
 
@@ -50,11 +68,10 @@ EventoEMS (Event Management System) là một hệ thống quản lý sự kiệ
 
 **Các yêu cầu phi chức năng:**
 - **Bảo mật:** Xác thực Firebase, mã hóa dữ liệu, bảo mật API
-- **Hiệu năng:** Thời gian phản hồi < 2 giây, hỗ trợ 1000+ người dùng đồng thời
-- **Tính khả dụng:** Uptime 99%, backup dữ liệu tự động
+- **Hiệu năng:** Thời gian phản hồi nhanh, xử lý đồng thời nhiều người dùng
 - **Khả năng mở rộng:** Kiến trúc microservices, triển khai Docker
 - **Tương thích:** Responsive design, hỗ trợ đa trình duyệt
-- **Bảo trì:** Code clean, documentation đầy đủ, CI/CD pipeline
+- **Bảo trì:** Code clean, documentation đầy đủ,
 
 ### 3.2. Đặc tả yêu cầu
 
@@ -72,27 +89,65 @@ EventoEMS (Event Management System) là một hệ thống quản lý sự kiệ
    - Calendar view và timeline view
 
 3. **Hệ thống đặt vé và thanh toán**
-   - Stripe integration cho thanh toán thẻ tín dụng
-   - QR code generation cho mỗi vé
-   - SMS confirmation via Twilio
-   - Invoice và receipt generation
-
-4. **Dashboard và báo cáo**
-   - Real-time analytics
-   - Event statistics và participant tracking
-   - Revenue reporting
+   - Stripe cho thanh toán thẻ tín dụng
+   - QR code cho mỗi vé
+   - SMS confirmation 
+   
+4. **Xác thực vé bằng mã QR**
+   - Sử dụng camera để quét mã QR
+   - Hiển thị thông tin vé và trạng thái (valid/used/expired)
+   - Cập nhật trạng thái vé khi quét
 
 ### 3.3. Thiết kế hệ thống
 
 **Kiến trúc hệ thống:**
 ```
-Frontend (React.js) → API Gateway → Backend (Express.js) → Database (MongoDB)
-                                     ↓
-                            External Services:
-                            - Firebase Auth
-                            - Stripe Payment
-                            - Twilio SMS
-                            - Image Storage
+              +---------------------+         
+              |     Web Browser     |          
+              +---------------------+          
+                        |
+                        v
+            +---------------------------+
+            |      React.js Frontend    |
+            +---------------------------+
+                        |
+                        v
+            +---------------------------+
+            |    Nginx (Reverse Proxy)  |
+            +---------------------------+
+                        |
+                        v
+        +--------------------------------------+
+        |       Express.js API Server          |
+        +--------------------------------------+
+         |           |               |        
+         v           v               v
++----------------+ +----------------+ +------------------+
+| Auth Middleware| | Role Middleware| | File Upload Svc  |
++----------------+ +----------------+ +------------------+
+                        |
+                        v
++---------------------+     +-------------------------+
+|    MongoDB Atlas    |     | Local File Storage      |
++---------------------+     +-------------------------+
+
+          External Integrations:
+         +-----------+  +-----------+  +-----------+
+         |  Firebase |  |  Stripe   |  |  Twilio   |
+         +-----------+  +-----------+  +-----------+
+               ^              ^              ^
+               |              |              |
+      +--------+--------------+--------------+--------+
+      |                                           |
++---------------------+                +---------------------+
+| React.js Frontend   |                | Express.js API      |
++---------------------+                +---------------------+
+
+          Deployment:
++---------------------+     +--------------------------+
+|     Docker          | <---> Docker Compose           |
++---------------------+     +--------------------------+
+
 ```
 
 **Thiết kế CSDL MongoDB:**
@@ -257,58 +312,51 @@ docker-compose up --build
 ### 7.1. Kết quả đạt được
 
 **Hệ thống hoàn chỉnh:**
-- ✅ Ứng dụng web full-stack hoạt động ổn định với MERN stack
-- ✅ Giao diện responsive, thân thiện và hiện đại
-- ✅ Hệ thống authentication với Firebase (Email/Password + Google OAuth)
-- ✅ Phân quyền 3 cấp: Admin, Organizer, Participant
+- ✅ Web app hoạt động ổn định
+- ✅ Giao diện hiện đại
+- ✅ Đăng nhập bằng Email/Password và Google OAuth
+- ✅ Phân quyền rõ ràng: Admin, Organizer, Participant
 
-**Tính năng cốt lõi:**
-- ✅ Quản lý sự kiện đầy đủ
-- ✅ Hệ thống đặt vé và thanh toán trực tuyến với Stripe
-- ✅ Tạo và xác thực vé bằng mã QR
-- ✅ SMS notification với Twilio
-- ✅ Dashboard analytics và reporting
+**Tính năng chính:**
+- ✅ Tạo và quản lý sự kiện
+- ✅ Đặt vé, thanh toán trực tuyến qua Stripe
+- ✅ Mã QR xác thực vé
+- ✅ Gửi SMS qua Twilio
 
-**DevOps và Deployment:**
-- ✅ Containerization với Docker và Docker Compose
-- ✅ Database cloud với MongoDB Atlas
+**Triển khai & tài liệu:**
+- ✅ Container hóa với Docker + Docker Compose
+- ✅ Cơ sở dữ liệu MongoDB Atlas (cloud)
+- ✅ README.md chi tiết, tài liệu API đầy đủ
+- ✅ Comment code rõ ràng, kiến trúc sạch
+- ✅ Hướng dẫn triển khai
 
-**Documentation:**
-- ✅ README.md chi tiết với hướng dẫn setup
-- ✅ API documentation
-- ✅ Code comments và clean architecture
-- ✅ Deployment guide
+---
 
 ### 7.2. Kết quả chưa đạt được
 
 **Tính năng nâng cao:**
-- ❌ Email notifications (chỉ có SMS)
-- ❌ Advanced analytics với charts/graphs
-- ❌ Multi-language support (chỉ tiếng Việt)
-- ❌ Real-time chat/messaging
+- ❌ Chưa có email thông báo (chỉ có SMS)
+- ❌ Chưa có biểu đồ/thống kê nâng cao
+- ❌ Chưa hỗ trợ đa ngôn ngữ (chỉ tiếng Việt)
+- ❌ Chưa có chat/messaging real-time
 
-**Performance Optimization:**
-- ❌ Image optimization pipeline
-- ❌ Caching layer (Redis)
-- ❌ CDN integration
-- ❌ Database query optimization hoàn toàn
+**Tối ưu hiệu năng:**
+- ❌ Chưa có pipeline tối ưu ảnh
+- ❌ Chưa có caching layer (Redis)
+- ❌ Chưa tích hợp CDN
+- ❌ Chưa tối ưu truy vấn DB toàn diện
 
-**Testing Coverage:**
-- ❌ Unit tests coverage < 80%
-- ❌ Integration tests cho tất cả endpoints
-- ❌ E2E testing với Cypress
-- ❌ Performance testing tự động
-
-**Production Features:**
-- ❌ Monitoring và logging system (ELK stack)
-- ❌ Auto-scaling configuration
-- ❌ Backup và disaster recovery plan
-- ❌ Load balancer setup
+**Tính năng production:**
+- ❌ Chưa có hệ thống monitoring/logging (ELK stack)
+- ❌ Chưa cấu hình auto-scaling
+- ❌ Chưa có kế hoạch backup & khôi phục
+- ❌ Chưa có setup load balancer
+- ❌ Chưa có CI/CD pipeline tự động
 
 ### 7.3. Hướng phát triển
 
 **Ngắn hạn (1-3 tháng):**
-- Thêm email notifications với SendGrid/Nodemailer
+- Thêm email notifications
 - Implement caching layer với Redis
 - Viết unit tests và integration tests
 - Setup monitoring với Prometheus/Grafana

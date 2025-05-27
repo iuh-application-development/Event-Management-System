@@ -7,3 +7,11 @@ serviceAccountKey.json
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Video files (exclude large media files)
+*.mp4
+*.avi
+*.mov
+*.wmv
+*.flv
+Event-Management-System*
